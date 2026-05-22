@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "Piglytics",
+    "slug": "Piglytics",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/Piglytics_Logo.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/Piglytics_Logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#AAFF00"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/Piglytics_Logo.png",
+        "backgroundColor": "#AAFF00"
+      },
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "favicon": "./assets/Piglytics_Logo.png"
+    }
+  }
+}
