@@ -1,31 +1,32 @@
 import React, { useState, useCallback } from "react";
-import { useFocusEffect } from "@react-navigation/native";
 import {
   View, Text, ScrollView, StyleSheet,
   TouchableOpacity, ActivityIndicator, Modal, TextInput, Alert,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { api } from "../services/api";
- 
-const STATUS_STYLE = {
-  pregnant: { bg: "#E6F1FB", text: "#185FA5" },
-  farrowed: { bg: "#EAF3DE", text: "#3B6D11" },
-  bred:     { bg: "#F1EFE8", text: "#5F5E5A" },
-  open:     { bg: "#F1EFE8", text: "#5F5E5A" },
-  failed:   { bg: "#FCEBEB", text: "#A32D2D" },
+import { COLORS, RADIUS, SHADOW } from "../theme";
+
+const STATUS_CONFIG = {
+  pregnant: { bg: COLORS.blueBg,     text: COLORS.blue,    icon: "🤰", label: "Pregnant"  },
+  farrowed: { bg: COLORS.healthyBg,  text: COLORS.healthy, icon: "🐣", label: "Farrowed"  },
+  bred:     { bg: "#F3E8FF",          text: "#9333EA",      icon: "🌸", label: "Bred"       },
+  open:     { bg: COLORS.screenBg,   text: COLORS.textMuted,icon: "⭕", label: "Open"      },
+  failed:   { bg: COLORS.dangerBg,   text: COLORS.danger,  icon: "❌", label: "Failed"     },
 };
- 
+
 export default function BreedingScreen() {
-  const [records, setRecords] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [records, setRecords]     = useState([]);
+  const [loading, setLoading]     = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ sow: "", breeding_date: "", notes: "" });
-  const [saving, setSaving] = useState(false);
+  const [form, setForm]           = useState({ sow: "", breeding_date: "", notes: "" });
+  const [saving, setSaving]       = useState(false);
   const [farrowModal, setFarrowModal]   = useState(false);
   const [farrowRecord, setFarrowRecord] = useState(null);
   const [aliveCount, setAliveCount]     = useState("");
   const [deadCount, setDeadCount]       = useState("");
   const [farrowNotes, setFarrowNotes]   = useState("");
-  
+
   async function load() {
     try {
       const data = await api.getBreeding();
@@ -34,19 +35,16 @@ export default function BreedingScreen() {
     finally { setLoading(false); }
   }
 
+  useFocusEffect(useCallback(() => { load(); }, []));
+
   function openFarrowingModal(record) {
     setFarrowRecord(record);
-    setAliveCount("");
-    setDeadCount("");
-    setFarrowNotes("");
+    setAliveCount(""); setDeadCount(""); setFarrowNotes("");
     setFarrowModal(true);
   }
 
   async function submitFarrowing() {
-    if (!aliveCount) {
-      Alert.alert("Required", "Please enter the number of live piglets.");
-      return;
-    }
+    if (!aliveCount) { Alert.alert("Required", "Enter the number of live piglets."); return; }
     try {
       await api.recordFarrowing(farrowRecord.id, {
         piglets_born_alive: parseInt(aliveCount),
@@ -54,16 +52,10 @@ export default function BreedingScreen() {
         notes: farrowNotes,
       });
       setFarrowModal(false);
-      Alert.alert("Recorded!", `Farrowing saved for ${farrowRecord.sow_name}.`);
+      Alert.alert("Recorded! 🐣", `Farrowing saved for ${farrowRecord.sow_name}.`);
       load();
-    } catch (e) {
-      Alert.alert("Error", e.message);
-    }
+    } catch (e) { Alert.alert("Error", e.message); }
   }
- 
-  useFocusEffect(
-    useCallback(() => { load(); }, [])
-  );
 
   async function handleAdd() {
     if (!form.sow || !form.breeding_date) {
@@ -75,167 +67,252 @@ export default function BreedingScreen() {
       await api.addBreeding(form);
       setShowModal(false);
       setForm({ sow: "", breeding_date: "", notes: "" });
+      Alert.alert("Saved! 🌸", "Breeding record added.");
       load();
-    } catch (e) {
-      Alert.alert("Error", e.message);
-    } finally { setSaving(false); }
+    } catch (e) { Alert.alert("Error", e.message); }
+    finally { setSaving(false); }
   }
- 
+
   async function updateStatus(id, status) {
     try {
       await api.updateBreeding(id, { pregnancy_status: status });
       load();
     } catch (e) { Alert.alert("Error", e.message); }
   }
- 
-  const pregnant = records.filter((r) => r.pregnancy_status === "pregnant").length;
-  const farrowed = records.filter((r) => r.pregnancy_status === "farrowed").length;
-  const total = records.length;
-  const successRate = total > 0 ? Math.round((farrowed / total) * 100) : 0;
- 
-  if (loading) return <ActivityIndicator style={{ marginTop: 60 }} color="#1D9E75" />;
- 
+
+  const pregnant    = records.filter(r => r.pregnancy_status === "pregnant").length;
+  const farrowed    = records.filter(r => r.pregnancy_status === "farrowed").length;
+  const successRate = records.length > 0 ? Math.round((farrowed / records.length) * 100) : 0;
+
+  if (loading) return (
+    <View style={s.center}>
+      <ActivityIndicator size="large" color={COLORS.primary} />
+    </View>
+  );
+
   return (
-    <View style={styles.container}>
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-        <View style={styles.metricRow}>
-          <MetricCard label="Pregnant" value={pregnant} color="#185FA5" />
-          <MetricCard label="Farrowed" value={farrowed} color="#3B6D11" />
-          <MetricCard label="Success rate" value={successRate + "%"} color="#1D9E75" />
+    <View style={s.screen}>
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 100 }} showsVerticalScrollIndicator={false}>
+
+        {/* Metric cards */}
+        <View style={s.metricsRow}>
+          <MetricCard icon="🤰" label="Pregnant" value={pregnant}       color={COLORS.blue}    bg={COLORS.blueBg} />
+          <MetricCard icon="🐣" label="Farrowed" value={farrowed}       color={COLORS.healthy} bg={COLORS.healthyBg} />
+          <MetricCard icon="📊" label="Success"  value={successRate+"%"} color={COLORS.primary} bg={COLORS.primaryLight} />
         </View>
-        <Text style={styles.sectionTitle}>Breeding records</Text>
-        {records.map((r) => {
-          const st = STATUS_STYLE[r.pregnancy_status] || STATUS_STYLE.bred;
+
+        {/* Records */}
+        <Text style={s.sectionTitle}>Breeding Records</Text>
+        {records.length === 0 && (
+          <View style={s.emptyState}>
+            <Text style={{ fontSize: 48 }}>🌸</Text>
+            <Text style={s.emptyTitle}>No breeding records</Text>
+            <Text style={s.emptySub}>Tap the button below to add a record</Text>
+          </View>
+        )}
+        {records.map(r => {
+          const cfg = STATUS_CONFIG[r.pregnancy_status] || STATUS_CONFIG.bred;
           const daysLeft = r.expected_farrowing_date
             ? Math.max(0, Math.round((new Date(r.expected_farrowing_date) - new Date()) / 86400000))
             : null;
+          const isUrgent = daysLeft !== null && daysLeft <= 5;
+
           return (
-            <View key={r.id} style={styles.card}>
-              <View style={styles.cardHeader}>
-                <Text style={styles.sowName}>{r.sow_name}</Text>
-                <View style={[styles.badge, { backgroundColor: st.bg }]}>
-                  <Text style={[styles.badgeText, { color: st.text }]}>{r.pregnancy_status}</Text>
+            <View key={r.id} style={[s.card, isUrgent && s.cardUrgent]}>
+              <View style={s.cardHeader}>
+                <View style={[s.statusIcon, { backgroundColor: cfg.bg }]}>
+                  <Text style={{ fontSize: 20 }}>{cfg.icon}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.sowName}>{r.sow_name}</Text>
+                  <Text style={s.breedDate}>Bred: {r.breeding_date}</Text>
+                </View>
+                <View style={[s.statusBadge, { backgroundColor: cfg.bg }]}>
+                  <Text style={[s.statusBadgeText, { color: cfg.text }]}>{cfg.label}</Text>
                 </View>
               </View>
-              <View style={styles.infoRow}>
-                <Text style={styles.infoLabel}>Bred on</Text>
-                <Text style={styles.infoValue}>{r.breeding_date}</Text>
-              </View>
+
               {r.expected_farrowing_date && (
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Expected farrowing</Text>
-                  <Text style={[styles.infoValue, daysLeft <= 5 && { color: "#BA7517", fontWeight: "700" }]}>
-                    {r.expected_farrowing_date} ({daysLeft}d)
+                <View style={[s.farrowRow, isUrgent && s.farrowRowUrgent]}>
+                  <Text style={s.farrowLabel}>Expected farrowing</Text>
+                  <Text style={[s.farrowValue, isUrgent && { color: COLORS.danger, fontWeight: "700" }]}>
+                    {r.expected_farrowing_date}
+                    {daysLeft !== null ? ` (${daysLeft}d)` : ""}
+                    {isUrgent ? " ⚠️" : ""}
                   </Text>
                 </View>
               )}
+
               {r.piglets_born_alive !== null && (
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Piglets born alive</Text>
-                  <Text style={styles.infoValue}>{r.piglets_born_alive}</Text>
+                <View style={s.pigletsRow}>
+                  <View style={s.pigletBadge}>
+                    <Text style={s.pigletBadgeText}>🐣 {r.piglets_born_alive} live</Text>
+                  </View>
+                  {r.piglets_born_dead > 0 && (
+                    <View style={[s.pigletBadge, { backgroundColor: COLORS.dangerBg }]}>
+                      <Text style={[s.pigletBadgeText, { color: COLORS.danger }]}>💀 {r.piglets_born_dead} dead</Text>
+                    </View>
+                  )}
                 </View>
               )}
+
               {r.pregnancy_status === "bred" && (
-                <TouchableOpacity style={styles.actionBtn} onPress={() => updateStatus(r.id, "pregnant")}>
-                  <Text style={styles.actionBtnText}>Mark as pregnant</Text>
+                <TouchableOpacity style={s.actionBtn} onPress={() => updateStatus(r.id, "pregnant")}>
+                  <Text style={s.actionBtnText}>🤰 Mark as Pregnant</Text>
                 </TouchableOpacity>
               )}
               {r.pregnancy_status === "pregnant" && (
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: "#E1F5EE" }]}
-                  onPress={() => openFarrowingModal(r)}
-                >
-                  <Text style={[styles.actionBtnText, { color: "#0F6E56" }]}>
-                    Mark as farrowed
-                  </Text>
+                <TouchableOpacity style={[s.actionBtn, s.actionBtnGreen]} onPress={() => openFarrowingModal(r)}>
+                  <Text style={[s.actionBtnText, { color: COLORS.primary }]}>🐣 Mark as Farrowed</Text>
                 </TouchableOpacity>
               )}
             </View>
           );
         })}
       </ScrollView>
- 
-      <TouchableOpacity style={styles.fab} onPress={() => setShowModal(true)}>
-        <Text style={styles.fabText}>+ Add record</Text>
+
+      {/* FAB */}
+      <TouchableOpacity style={s.fab} onPress={() => setShowModal(true)}>
+        <Text style={s.fabText}>+ Add Record</Text>
       </TouchableOpacity>
- 
+
+      {/* Add Record Modal */}
+      <Modal visible={showModal} animationType="slide" presentationStyle="pageSheet">
+        <View style={s.modal}>
+          <View style={s.modalHeader}>
+            <Text style={s.modalTitle}>New Breeding Record</Text>
+            <TouchableOpacity onPress={() => setShowModal(false)}>
+              <Text style={s.modalClose}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView style={{ padding: 20 }}>
+            <ModalField label="Sow pig ID (database number) *">
+              <TextInput style={s.modalInput} value={form.sow}
+                onChangeText={v => setForm(f => ({ ...f, sow: v }))}
+                placeholder="e.g. 3" placeholderTextColor={COLORS.textMuted} keyboardType="number-pad" />
+            </ModalField>
+            <ModalField label="Breeding date * (YYYY-MM-DD)">
+              <TextInput style={s.modalInput} value={form.breeding_date}
+                onChangeText={v => setForm(f => ({ ...f, breeding_date: v }))}
+                placeholder="e.g. 2025-06-01" placeholderTextColor={COLORS.textMuted} />
+            </ModalField>
+            <ModalField label="Notes (optional)">
+              <TextInput style={[s.modalInput, { height: 80, textAlignVertical: "top" }]}
+                value={form.notes} onChangeText={v => setForm(f => ({ ...f, notes: v }))}
+                placeholder="Any observations..." placeholderTextColor={COLORS.textMuted} multiline />
+            </ModalField>
+            <View style={s.infoBox}>
+              <Text style={s.infoBoxText}>
+                ℹ️  Expected farrowing date (114 days) will be calculated automatically.
+              </Text>
+            </View>
+            <TouchableOpacity style={s.saveBtn} onPress={handleAdd} disabled={saving}>
+              {saving ? <ActivityIndicator color={COLORS.white} /> : <Text style={s.saveBtnText}>Save Record</Text>}
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+      </Modal>
+
       {/* Farrowing Modal */}
       <Modal visible={farrowModal} animationType="slide" presentationStyle="pageSheet">
-        <View style={styles.modal}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>
-              Record farrowing — {farrowRecord?.sow_name}
-            </Text>
+        <View style={s.modal}>
+          <View style={s.modalHeader}>
+            <Text style={s.modalTitle}>Record Farrowing — {farrowRecord?.sow_name}</Text>
             <TouchableOpacity onPress={() => setFarrowModal(false)}>
-              <Text style={{ color: "#888780", fontSize: 15 }}>Cancel</Text>
+              <Text style={s.modalClose}>✕</Text>
             </TouchableOpacity>
           </View>
-          <View style={styles.modalBody}>
-            <Text style={styles.fieldLabel}>Live piglets born *</Text>
-            <TextInput style={styles.input} value={aliveCount}
-              onChangeText={setAliveCount} placeholder="e.g. 10"
-              placeholderTextColor="#B4B2A9" keyboardType="number-pad" />
-
-            <Text style={[styles.fieldLabel, { marginTop: 14 }]}>
-              Dead piglets (optional)
-            </Text>
-            <TextInput style={styles.input} value={deadCount}
-              onChangeText={setDeadCount} placeholder="e.g. 1"
-              placeholderTextColor="#B4B2A9" keyboardType="number-pad" />
-
-            <Text style={[styles.fieldLabel, { marginTop: 14 }]}>
-              Notes (optional)
-            </Text>
-            <TextInput style={[styles.input, { height: 80, textAlignVertical: "top" }]}
-              value={farrowNotes} onChangeText={setFarrowNotes}
-              placeholder="Any observations during delivery..."
-              placeholderTextColor="#B4B2A9" multiline />
-
-            <TouchableOpacity style={styles.saveBtn} onPress={submitFarrowing}>
-              <Text style={styles.saveBtnText}>Save farrowing record</Text>
+          <ScrollView style={{ padding: 20 }}>
+            <ModalField label="Live piglets born *">
+              <TextInput style={s.modalInput} value={aliveCount} onChangeText={setAliveCount}
+                placeholder="e.g. 10" placeholderTextColor={COLORS.textMuted} keyboardType="number-pad" />
+            </ModalField>
+            <ModalField label="Dead piglets (optional)">
+              <TextInput style={s.modalInput} value={deadCount} onChangeText={setDeadCount}
+                placeholder="e.g. 1" placeholderTextColor={COLORS.textMuted} keyboardType="number-pad" />
+            </ModalField>
+            <ModalField label="Notes (optional)">
+              <TextInput style={[s.modalInput, { height: 80, textAlignVertical: "top" }]}
+                value={farrowNotes} onChangeText={setFarrowNotes}
+                placeholder="Any observations during delivery..." placeholderTextColor={COLORS.textMuted} multiline />
+            </ModalField>
+            <TouchableOpacity style={s.saveBtn} onPress={submitFarrowing}>
+              <Text style={s.saveBtnText}>Save Farrowing Record</Text>
             </TouchableOpacity>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
     </View>
   );
 }
- 
-function MetricCard({ label, value, color }) {
+
+function MetricCard({ icon, label, value, color, bg }) {
   return (
-    <View style={styles.metric}>
-      <Text style={[styles.metricValue, { color }]}>{value}</Text>
-      <Text style={styles.metricLabel}>{label}</Text>
+    <View style={[s.metricCard, { backgroundColor: bg }]}>
+      <Text style={{ fontSize: 24, marginBottom: 4 }}>{icon}</Text>
+      <Text style={[s.metricValue, { color }]}>{value}</Text>
+      <Text style={s.metricLabel}>{label}</Text>
     </View>
   );
 }
- 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F8F7F2" },
-  metricRow: { flexDirection: "row", gap: 10 },
-  metric: { flex: 1, backgroundColor: "#fff", borderRadius: 12, padding: 14, borderWidth: 0.5, borderColor: "#D3D1C7", alignItems: "center" },
-  metricValue: { fontSize: 24, fontWeight: "700" },
-  metricLabel: { fontSize: 11, color: "#888780", marginTop: 2 },
-  sectionTitle: { fontSize: 14, fontWeight: "700", color: "#2C2C2A" },
-  card: { backgroundColor: "#fff", borderRadius: 12, padding: 14, borderWidth: 0.5, borderColor: "#D3D1C7" },
-  cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
-  sowName: { fontSize: 15, fontWeight: "700", color: "#2C2C2A" },
-  badge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999 },
-  badgeText: { fontSize: 12, fontWeight: "600", textTransform: "capitalize" },
-  infoRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 5, borderTopWidth: 0.5, borderTopColor: "#E8E7E0" },
-  infoLabel: { fontSize: 13, color: "#888780" },
-  infoValue: { fontSize: 13, color: "#2C2C2A", fontWeight: "500" },
-  actionBtn: { marginTop: 10, backgroundColor: "#FAEEDA", borderRadius: 8, paddingVertical: 9, alignItems: "center" },
-  actionBtnText: { color: "#854F0B", fontWeight: "600", fontSize: 13 },
-  fab: { position: "absolute", bottom: 24, right: 20, backgroundColor: "#1D9E75", borderRadius: 30, paddingHorizontal: 20, paddingVertical: 12, elevation: 5 },
-  fabText: { color: "#fff", fontWeight: "700", fontSize: 14 },
-  modal: { flex: 1, backgroundColor: "#F8F7F2" },
-  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, backgroundColor: "#fff", borderBottomWidth: 0.5, borderBottomColor: "#D3D1C7" },
-  modalTitle: { fontSize: 17, fontWeight: "700", color: "#2C2C2A" },
-  modalBody: { padding: 20 },
-  fieldLabel: { fontSize: 13, color: "#5F5E5A", marginBottom: 6, fontWeight: "500" },
-  input: { backgroundColor: "#fff", borderRadius: 10, padding: 12, fontSize: 14, color: "#2C2C2A", borderWidth: 0.5, borderColor: "#D3D1C7" },
-  hint: { fontSize: 12, color: "#B4B2A9", fontStyle: "italic", marginTop: 12 },
-  saveBtn: { marginTop: 24, backgroundColor: "#1D9E75", borderRadius: 12, padding: 15, alignItems: "center" },
-  saveBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+
+function ModalField({ label, children }) {
+  return (
+    <View style={{ marginBottom: 14 }}>
+      <Text style={s.modalFieldLabel}>{label}</Text>
+      {children}
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: COLORS.screenBg },
+  center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: COLORS.screenBg },
+
+  metricsRow:  { flexDirection: "row", gap: 10 },
+  metricCard:  { flex: 1, borderRadius: RADIUS.xl, padding: 14, alignItems: "center", ...SHADOW.sm },
+  metricValue: { fontSize: 22, fontWeight: "800" },
+  metricLabel: { fontSize: 11, color: COLORS.textMuted, marginTop: 2 },
+
+  sectionTitle: { fontSize: 16, fontWeight: "700", color: COLORS.textPrimary, marginBottom: 4 },
+
+  card:       { backgroundColor: COLORS.white, borderRadius: RADIUS.xl, padding: 16, ...SHADOW.sm },
+  cardUrgent: { borderLeftWidth: 3, borderLeftColor: COLORS.danger },
+  cardHeader: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 12 },
+  statusIcon: { width: 48, height: 48, borderRadius: 24, justifyContent: "center", alignItems: "center" },
+  sowName:    { fontSize: 15, fontWeight: "700", color: COLORS.textPrimary },
+  breedDate:  { fontSize: 12, color: COLORS.textMuted, marginTop: 2 },
+  statusBadge:{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: RADIUS.full },
+  statusBadgeText:{ fontSize: 12, fontWeight: "700" },
+
+  farrowRow:       { flexDirection: "row", justifyContent: "space-between", backgroundColor: COLORS.screenBg, borderRadius: RADIUS.md, padding: 10, marginBottom: 10 },
+  farrowRowUrgent: { backgroundColor: COLORS.dangerBg },
+  farrowLabel:     { fontSize: 12, color: COLORS.textMuted },
+  farrowValue:     { fontSize: 12, color: COLORS.textPrimary, fontWeight: "600" },
+
+  pigletsRow:    { flexDirection: "row", gap: 8, marginBottom: 10 },
+  pigletBadge:   { backgroundColor: COLORS.healthyBg, paddingHorizontal: 10, paddingVertical: 4, borderRadius: RADIUS.full },
+  pigletBadgeText:{ fontSize: 12, color: COLORS.healthy, fontWeight: "600" },
+
+  actionBtn:      { backgroundColor: COLORS.warningBg, borderRadius: RADIUS.lg, paddingVertical: 10, alignItems: "center" },
+  actionBtnGreen: { backgroundColor: COLORS.primaryLight },
+  actionBtnText:  { color: COLORS.warning, fontWeight: "700", fontSize: 13 },
+
+  emptyState: { alignItems: "center", paddingVertical: 48, gap: 8 },
+  emptyTitle: { fontSize: 16, fontWeight: "700", color: COLORS.textPrimary },
+  emptySub:   { fontSize: 13, color: COLORS.textMuted },
+
+  fab:     { position: "absolute", bottom: 24, alignSelf: "center", backgroundColor: COLORS.primary, borderRadius: RADIUS.full, paddingHorizontal: 24, paddingVertical: 14, ...SHADOW.lg },
+  fabText: { color: COLORS.white, fontWeight: "700", fontSize: 15 },
+
+  modal:          { flex: 1, backgroundColor: COLORS.screenBg },
+  modalHeader:    { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, backgroundColor: COLORS.white, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  modalTitle:     { fontSize: 17, fontWeight: "700", color: COLORS.textPrimary, flex: 1 },
+  modalClose:     { fontSize: 18, color: COLORS.textMuted },
+  modalInput:     { backgroundColor: COLORS.white, borderRadius: RADIUS.md, padding: 13, fontSize: 14, color: COLORS.textPrimary, borderWidth: 1, borderColor: COLORS.border },
+  modalFieldLabel:{ fontSize: 13, fontWeight: "600", color: COLORS.textSecondary, marginBottom: 6 },
+  infoBox:        { backgroundColor: COLORS.primaryLight, borderRadius: RADIUS.md, padding: 12, marginBottom: 14 },
+  infoBoxText:    { fontSize: 12, color: COLORS.primary, lineHeight: 18 },
+  saveBtn:        { backgroundColor: COLORS.primary, borderRadius: RADIUS.xl, padding: 15, alignItems: "center" },
+  saveBtnText:    { color: COLORS.white, fontWeight: "700", fontSize: 15 },
 });

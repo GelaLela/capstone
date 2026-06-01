@@ -1,29 +1,36 @@
-import React, { useEffect, useState, useCallback } from "react";
-import { useFocusEffect } from "@react-navigation/native";
+import React, { useState, useCallback } from "react";
 import {
   View, Text, FlatList, StyleSheet,
-  TouchableOpacity, ActivityIndicator,
+  TouchableOpacity, ActivityIndicator, ScrollView,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { api } from "../services/api";
- 
-const TYPE_STYLE = {
-  health:      { icon: "🩺", bg: "#FCEBEB", border: "#E24B4A", text: "#A32D2D" },
-  breeding:    { icon: "🐷", bg: "#E6F1FB", border: "#378ADD", text: "#185FA5" },
-  inventory:   { icon: "📦", bg: "#FAEEDA", border: "#EF9F27", text: "#854F0B" },
-  weather:     { icon: "🌤️", bg: "#EAF3DE", border: "#97C459", text: "#3B6D11" },
-  vaccination: { icon: "💉", bg: "#FBEAF0", border: "#D4537E", text: "#993556" },
+import { COLORS, RADIUS, SHADOW } from "../theme";
+
+const FILTERS = ["All", "Health", "Breeding", "Inventory", "Weather"];
+
+const TYPE_CONFIG = {
+  health:      { icon: "❤️",  bg: COLORS.dangerBg,  border: COLORS.danger,  text: COLORS.danger,  label: "Health"    },
+  breeding:    { icon: "🌸",  bg: "#F3E8FF",         border: "#9333EA",      text: "#9333EA",       label: "Breeding"  },
+  inventory:   { icon: "📦",  bg: COLORS.warningBg,  border: COLORS.warning, text: COLORS.warning,  label: "Inventory" },
+  weather:     { icon: "🌤️", bg: COLORS.blueBg,     border: COLORS.blue,    text: COLORS.blue,     label: "Weather"   },
+  vaccination: { icon: "💉",  bg: "#FDF2F8",         border: COLORS.pink,    text: COLORS.pink,     label: "Vaccine"   },
 };
- 
-function formatTime(iso) {
+
+function timeAgo(iso) {
   if (!iso) return "";
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-PH", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const diff = Math.floor((Date.now() - new Date(iso)) / 60000);
+  if (diff < 1)  return "Just now";
+  if (diff < 60) return `${diff}m ago`;
+  if (diff < 1440) return `${Math.floor(diff / 60)}h ago`;
+  return `${Math.floor(diff / 1440)}d ago`;
 }
- 
+
 export default function NotificationsScreen() {
   const [notifications, setNotifications] = useState([]);
-  const [loading, setLoading] = useState(true);
- 
+  const [loading, setLoading]   = useState(true);
+  const [activeFilter, setFilter] = useState("All");
+
   async function load() {
     try {
       const data = await api.getNotifications();
@@ -31,70 +38,102 @@ export default function NotificationsScreen() {
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }
- 
-  useFocusEffect(
-    useCallback(() => { load(); }, [])
-  );
- 
+
+  useFocusEffect(useCallback(() => { load(); }, []));
+
   async function markRead(id) {
     await api.markRead(id);
-    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)));
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
   }
- 
+
   async function markAllRead() {
     await api.markAllRead();
-    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
   }
- 
-  const unread = notifications.filter((n) => !n.is_read).length;
- 
-  if (loading) return <ActivityIndicator style={{ marginTop: 60 }} color="#1D9E75" />;
- 
+
+  const unread = notifications.filter(n => !n.is_read).length;
+
+  const filtered = notifications.filter(n => {
+    if (activeFilter === "All") return true;
+    return n.notification_type === activeFilter.toLowerCase() ||
+           (activeFilter === "Vaccine" && n.notification_type === "vaccination");
+  });
+
+  if (loading) return <ActivityIndicator style={{ marginTop: 60 }} color={COLORS.primary} size="large" />;
+
   return (
-    <View style={styles.container}>
-      <View style={styles.topBar}>
-        <Text style={styles.unreadCount}>{unread} unread</Text>
+    <View style={s.screen}>
+      {/* Header */}
+      <View style={s.header}>
+        <View>
+          <Text style={s.headerTitle}>Alerts</Text>
+          {unread > 0 && <Text style={s.headerSub}>{unread} unread notifications</Text>}
+        </View>
         {unread > 0 && (
-          <TouchableOpacity onPress={markAllRead}>
-            <Text style={styles.markAll}>Mark all as read</Text>
+          <TouchableOpacity style={s.markAllBtn} onPress={markAllRead}>
+            <Text style={s.markAllText}>Mark all read</Text>
           </TouchableOpacity>
         )}
       </View>
+
+      {/* Filter pills */}
+      <View style={s.filterWrapper}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={s.filterContent}
+        >
+          {FILTERS.map(f => (
+            <TouchableOpacity
+              key={f}
+              style={[s.pill, activeFilter === f && s.pillActive]}
+              onPress={() => setFilter(f)}
+            >
+              <Text style={[s.pillText, activeFilter === f && s.pillTextActive]}>{f}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+
       <FlatList
-        data={notifications}
-        keyExtractor={(item) => String(item.id)}
-        contentContainerStyle={{ padding: 12, gap: 10 }}
+        data={filtered}
+        keyExtractor={item => String(item.id)}
+        contentContainerStyle={{ padding: 16, gap: 10, paddingBottom: 100 }}
+        showsVerticalScrollIndicator={false}
         ListEmptyComponent={
-          <View style={styles.emptyWrap}>
-            <Text style={styles.emptyIcon}>🔔</Text>
-            <Text style={styles.emptyText}>No notifications yet.</Text>
+          <View style={s.emptyState}>
+            <Text style={{ fontSize: 48 }}>🔔</Text>
+            <Text style={s.emptyTitle}>No notifications</Text>
+            <Text style={s.emptySub}>You're all caught up!</Text>
           </View>
         }
         renderItem={({ item }) => {
-          const style = TYPE_STYLE[item.notification_type] || TYPE_STYLE.health;
+          const cfg = TYPE_CONFIG[item.notification_type] || TYPE_CONFIG.health;
           return (
             <TouchableOpacity
-              style={[styles.card, !item.is_read && styles.cardUnread, { borderLeftColor: style.border }]}
+              style={[s.card, !item.is_read && { borderLeftWidth: 3, borderLeftColor: cfg.border }]}
               onPress={() => !item.is_read && markRead(item.id)}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
             >
-              <View style={styles.cardRow}>
-                <Text style={styles.icon}>{style.icon}</Text>
-                <View style={{ flex: 1 }}>
-                  <View style={styles.titleRow}>
-                    <Text style={styles.cardTitle}>{item.title}</Text>
-                    {!item.is_read && <View style={styles.dot} />}
+              <View style={[s.iconWrap, { backgroundColor: cfg.bg }]}>
+                <Text style={{ fontSize: 20 }}>{cfg.icon}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <View style={s.cardTop}>
+                  <Text style={s.cardTitle} numberOfLines={1}>{item.title}</Text>
+                  {!item.is_read && <View style={[s.unreadDot, { backgroundColor: cfg.border }]} />}
+                </View>
+                <Text style={s.cardMsg} numberOfLines={2}>{item.message}</Text>
+                <View style={s.cardMeta}>
+                  <View style={[s.typeBadge, { backgroundColor: cfg.bg }]}>
+                    <Text style={[s.typeText, { color: cfg.text }]}>{cfg.label}</Text>
                   </View>
-                  <Text style={styles.cardMsg}>{item.message}</Text>
-                  <View style={styles.metaRow}>
-                    <View style={[styles.typeBadge, { backgroundColor: style.bg }]}>
-                      <Text style={[styles.typeBadgeText, { color: style.text }]}>
-                        {item.notification_type.replace("_", " ")}
-                      </Text>
+                  {item.sent_via_sms && (
+                    <View style={[s.typeBadge, { backgroundColor: COLORS.healthyBg }]}>
+                      <Text style={[s.typeText, { color: COLORS.healthy }]}>SMS sent</Text>
                     </View>
-                    {item.sent_via_sms && <Text style={styles.smsBadge}>SMS sent</Text>}
-                    <Text style={styles.time}>{formatTime(item.created_at)}</Text>
-                  </View>
+                  )}
+                  <Text style={s.timeText}>{timeAgo(item.created_at)}</Text>
                 </View>
               </View>
             </TouchableOpacity>
@@ -104,26 +143,54 @@ export default function NotificationsScreen() {
     </View>
   );
 }
- 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F8F7F2" },
-  topBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 14, backgroundColor: "#fff", borderBottomWidth: 0.5, borderBottomColor: "#D3D1C7" },
-  unreadCount: { fontSize: 13, fontWeight: "600", color: "#2C2C2A" },
-  markAll: { fontSize: 13, color: "#1D9E75", fontWeight: "600" },
-  card: { backgroundColor: "#fff", borderRadius: 12, padding: 14, borderWidth: 0.5, borderColor: "#D3D1C7", borderLeftWidth: 4 },
-  cardUnread: { backgroundColor: "#FAFAF8" },
-  cardRow: { flexDirection: "row", gap: 12, alignItems: "flex-start" },
-  icon: { fontSize: 22, marginTop: 2 },
-  titleRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
-  cardTitle: { fontSize: 14, fontWeight: "700", color: "#2C2C2A", flex: 1 },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#1D9E75" },
-  cardMsg: { fontSize: 13, color: "#5F5E5A", lineHeight: 18, marginBottom: 8 },
-  metaRow: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
-  typeBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 999 },
-  typeBadgeText: { fontSize: 11, fontWeight: "600", textTransform: "capitalize" },
-  smsBadge: { fontSize: 11, color: "#639922", fontWeight: "600" },
-  time: { fontSize: 11, color: "#B4B2A9", marginLeft: "auto" },
-  emptyWrap: { alignItems: "center", marginTop: 80 },
-  emptyIcon: { fontSize: 40, marginBottom: 10 },
-  emptyText: { color: "#B4B2A9", fontSize: 14 },
+
+const s = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: COLORS.screenBg },
+
+  header:      { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16, paddingTop: 20, backgroundColor: COLORS.white, ...SHADOW.sm },
+  headerTitle: { fontSize: 22, fontWeight: "800", color: COLORS.textPrimary },
+  headerSub:   { fontSize: 12, color: COLORS.textMuted, marginTop: 2 },
+  markAllBtn:  { backgroundColor: COLORS.primaryLight, paddingHorizontal: 12, paddingVertical: 6, borderRadius: RADIUS.full },
+  markAllText: { fontSize: 12, color: COLORS.primary, fontWeight: "700" },
+
+  filterWrapper: {
+    backgroundColor: COLORS.white,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    paddingVertical: 10,
+  },
+  filterContent: {
+    paddingHorizontal: 16,
+    gap: 8,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  pill: {
+    height: 36,
+    paddingHorizontal: 18,
+    borderRadius: 18,
+    backgroundColor: COLORS.screenBg,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  pillActive:    { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  pillText:      { fontSize: 14, color: COLORS.textSecondary, fontWeight: "600" },
+  pillTextActive:{ color: COLORS.white, fontWeight: "700" },
+
+  card:     { flexDirection: "row", gap: 12, backgroundColor: COLORS.white, borderRadius: RADIUS.xl, padding: 14, ...SHADOW.sm },
+  iconWrap: { width: 44, height: 44, borderRadius: 22, justifyContent: "center", alignItems: "center", flexShrink: 0 },
+  cardTop:  { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
+  cardTitle:{ fontSize: 14, fontWeight: "700", color: COLORS.textPrimary, flex: 1 },
+  unreadDot:{ width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
+  cardMsg:  { fontSize: 12, color: COLORS.textSecondary, lineHeight: 18, marginBottom: 8 },
+  cardMeta: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" },
+  typeBadge:{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: RADIUS.full },
+  typeText: { fontSize: 10, fontWeight: "600" },
+  timeText: { fontSize: 11, color: COLORS.textMuted, marginLeft: "auto" },
+
+  emptyState: { alignItems: "center", paddingTop: 60, gap: 8 },
+  emptyTitle: { fontSize: 16, fontWeight: "700", color: COLORS.textPrimary },
+  emptySub:   { fontSize: 13, color: COLORS.textMuted },
 });

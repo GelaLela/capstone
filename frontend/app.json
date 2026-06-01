@@ -4,11 +4,11 @@
     "slug": "Piglytics",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/Piglytics_Logo.png",
+    "icon": "./assets/images/logo1024.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/Piglytics_Logo.png",
+      "image": "./assets/images/Piglytics_Logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#AAFF00"
     },
@@ -17,13 +17,19 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/Piglytics_Logo.png",
+        "foregroundImage": "./assets/images/logo1024.png",
         "backgroundColor": "#AAFF00"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.piglyticscapstone.piglytics"
     },
     "web": {
-      "favicon": "./assets/Piglytics_Logo.png"
+      "favicon": "./assets/images/logo1024.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "27608dba-9ad4-4793-a333-eebcaf92a53f"
+      }
     }
   }
 }

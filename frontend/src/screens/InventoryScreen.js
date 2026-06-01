@@ -1,23 +1,26 @@
-import React, { useEffect, useState, useCallback } from "react";
-import { useFocusEffect } from "@react-navigation/native";
+import React, { useState, useCallback } from "react";
 import {
   View, Text, ScrollView, StyleSheet, Modal,
   TouchableOpacity, ActivityIndicator, Alert, TextInput,
+  KeyboardAvoidingView, Platform,
 } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import { api } from "../services/api";
- 
+import { COLORS, RADIUS, SHADOW } from "../theme";
+
 export default function InventoryScreen() {
-  const [feed, setFeed] = useState([]);
-  const [medicine, setMedicine] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState("feed");
+  const [feed, setFeed]                   = useState([]);
+  const [medicine, setMedicine]           = useState([]);
+  const [loading, setLoading]             = useState(true);
+  const [tab, setTab]                     = useState("feed");
   const [addFeedModal, setAddFeedModal]   = useState(false);
   const [addMedModal, setAddMedModal]     = useState(false);
-  const [newFeed, setNewFeed] = useState({ feed_type: "starter", stock_kg: "", daily_usage_kg: "" });
-  const [newMed,  setNewMed]  = useState({ name: "", category: "antibiotic", quantity: "", unit: "doses", low_stock_threshold: "10" });
+  const [newFeed, setNewFeed]             = useState({ feed_type: "starter", stock_kg: "", daily_usage_kg: "" });
+  const [newMed, setNewMed]               = useState({ name: "", category: "antibiotic", quantity: "", unit: "doses", low_stock_threshold: "10" });
   const [addingSaving, setAddingSaving]   = useState(false);
   const [restockAmount, setRestockAmount] = useState({});
- 
+  const [usageAmount, setUsageAmount]     = useState({});
+
   async function load() {
     try {
       const [f, m] = await Promise.all([api.getFeed(), api.getMedicine()]);
@@ -26,24 +29,15 @@ export default function InventoryScreen() {
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   }
- 
-  useFocusEffect(
-    useCallback(() => { load(); }, [])
-  );
+
+  useFocusEffect(useCallback(() => { load(); }, []));
 
   async function saveNewFeed() {
-    if (!newFeed.stock_kg) {
-      Alert.alert("Required", "Please enter the stock amount.");
-      return;
-    }
+    if (!newFeed.stock_kg) { Alert.alert("Required", "Please enter the stock amount."); return; }
     setAddingSaving(true);
     try {
-      await api.addFeed({
-        feed_type:       newFeed.feed_type,
-        stock_kg:        parseFloat(newFeed.stock_kg),
-        daily_usage_kg:  parseFloat(newFeed.daily_usage_kg || "0"),
-      });
-      Alert.alert("Added!", "New feed added to inventory.");
+      await api.addFeed({ feed_type: newFeed.feed_type, stock_kg: parseFloat(newFeed.stock_kg), daily_usage_kg: parseFloat(newFeed.daily_usage_kg || "0") });
+      Alert.alert("Added!", "Feed stock updated.");
       setAddFeedModal(false);
       setNewFeed({ feed_type: "starter", stock_kg: "", daily_usage_kg: "" });
       load();
@@ -52,331 +46,425 @@ export default function InventoryScreen() {
   }
 
   async function saveNewMedicine() {
-    if (!newMed.name || !newMed.quantity) {
-      Alert.alert("Required", "Please fill in name and quantity.");
-      return;
-    }
+    if (!newMed.name || !newMed.quantity) { Alert.alert("Required", "Name and quantity required."); return; }
     setAddingSaving(true);
     try {
-      await api.addMedicine({
-        name:                newMed.name,
-        category:            newMed.category,
-        quantity:            parseInt(newMed.quantity),
-        unit:                newMed.unit,
-        low_stock_threshold: parseInt(newMed.low_stock_threshold || "10"),
-      });
-      Alert.alert("Added!", `${newMed.name} added to inventory.`);
+      await api.addMedicine({ name: newMed.name, category: newMed.category, quantity: parseInt(newMed.quantity), unit: newMed.unit, low_stock_threshold: parseInt(newMed.low_stock_threshold || "10") });
+      Alert.alert("Added!", `${newMed.name} added.`);
       setAddMedModal(false);
       setNewMed({ name: "", category: "antibiotic", quantity: "", unit: "doses", low_stock_threshold: "10" });
       load();
     } catch (e) { Alert.alert("Error", e.message); }
     finally { setAddingSaving(false); }
   }
-  async function restockFeed(feedItem) {
-    const amount = restockAmount[feedItem.id];
-    if (!amount || isNaN(parseFloat(amount))) {
-      Alert.alert("Enter amount", "Please type the kg to add.");
-      return;
-    }
-    try {
-      await api.updateFeed(feedItem.id, {
-        stock_kg: parseFloat(feedItem.stock_kg) + parseFloat(amount),
-      });
-      Alert.alert("Restocked!", `${amount}kg added to ${feedItem.feed_type_display}.`);
-      setRestockAmount(prev => ({ ...prev, [feedItem.id]: "" }));
-      load();
-    } catch (e) {
-      Alert.alert("Error", e.message);
-    }
-  }
-const [usageAmount, setUsageAmount] = useState({});
 
-async function logUsage(feedItem) {
-  const amount = usageAmount[feedItem.id];
-  if (!amount || isNaN(parseFloat(amount))) {
-    Alert.alert("Enter amount", "Please type the kg used in the input box first.");
-    return;
+  async function restockFeed(item) {
+    const amount = restockAmount[item.id];
+    if (!amount || isNaN(parseFloat(amount))) { Alert.alert("Enter amount", "Type the kg to add."); return; }
+    try {
+      await api.updateFeed(item.id, { stock_kg: parseFloat(item.stock_kg) + parseFloat(amount) });
+      Alert.alert("Restocked!", `${amount}kg added.`);
+      setRestockAmount(prev => ({ ...prev, [item.id]: "" }));
+      load();
+    } catch (e) { Alert.alert("Error", e.message); }
   }
-  try {
-    await api.logFeedUsage(feedItem.id, parseFloat(amount));
-    Alert.alert("Logged!", `${amount}kg deducted from ${feedItem.feed_type_display}.`);
-    setUsageAmount(prev => ({ ...prev, [feedItem.id]: "" }));
-    load();
-  } catch (e) { Alert.alert("Error", e.message); }
-}
- 
-  if (loading) return <ActivityIndicator style={{ marginTop: 60 }} color="#1D9E75" />;
- 
+
+  async function logUsage(item) {
+    const amount = usageAmount[item.id];
+    if (!amount || isNaN(parseFloat(amount))) { Alert.alert("Enter amount", "Type kg used today."); return; }
+    try {
+      await api.logFeedUsage(item.id, parseFloat(amount));
+      Alert.alert("Logged!", `${amount}kg deducted.`);
+      setUsageAmount(prev => ({ ...prev, [item.id]: "" }));
+      load();
+    } catch (e) { Alert.alert("Error", e.message); }
+  }
+
+  async function removeFeed(item) {
+    Alert.alert("Remove feed", `Remove ${item.feed_type_display}?`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Remove", style: "destructive", onPress: async () => {
+        try { await api.deleteFeed(item.id); load(); } catch (e) { Alert.alert("Error", e.message); }
+      }},
+    ]);
+  }
+
+  async function removeMedicine(item) {
+    Alert.alert("Remove medicine", `Remove ${item.name}?`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Remove", style: "destructive", onPress: async () => {
+        try { await api.deleteMedicine(item.id); load(); } catch (e) { Alert.alert("Error", e.message); }
+      }},
+    ]);
+  }
+
+  if (loading) return <ActivityIndicator style={{ marginTop: 60 }} color={COLORS.primary} size="large" />;
+
   return (
-    <View style={styles.container}>
-      <View style={styles.tabRow}>
-        <TouchableOpacity style={[styles.tab, tab === "feed" && styles.tabActive]} onPress={() => setTab("feed")}>
-          <Text style={[styles.tabText, tab === "feed" && styles.tabTextActive]}>Feed</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.tab, tab === "medicine" && styles.tabActive]} onPress={() => setTab("medicine")}>
-          <Text style={[styles.tabText, tab === "medicine" && styles.tabTextActive]}>Medicine & Vitamins</Text>
-        </TouchableOpacity>
+    <View style={s.screen}>
+      {/* Tab switcher */}
+      <View style={s.tabWrap}>
+        <View style={s.tabPills}>
+          <TouchableOpacity style={[s.tabPill, tab === "feed" && s.tabPillActive]} onPress={() => setTab("feed")}>
+            <Text style={[s.tabPillText, tab === "feed" && s.tabPillTextActive]}>🌾 Feed</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[s.tabPill, tab === "medicine" && s.tabPillActive]} onPress={() => setTab("medicine")}>
+            <Text style={[s.tabPillText, tab === "medicine" && s.tabPillTextActive]}>💊 Medicine</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-      <TouchableOpacity
-        style={{ margin: 10, marginTop: 0, backgroundColor: "#1D9E75", borderRadius: 8, padding: 10, alignItems: "center" }}
-        onPress={() => tab === "feed" ? setAddFeedModal(true) : setAddMedModal(true)}
+
+      <ScrollView
+        contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 100 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13 }}>
-          + Add {tab === "feed" ? "feed" : "medicine / vitamin"}
-        </Text>
-      </TouchableOpacity>
-      <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-        {tab === "feed" && feed.map((item) => (
-          <FeedCard
-            key={item.id}
-            item={item}
-            usageAmount={usageAmount}
-            setUsageAmount={setUsageAmount}
-            restockAmount={restockAmount}
-            setRestockAmount={setRestockAmount}
-            onLogUsage={() => logUsage(item)}
-            onRestock={() => restockFeed(item)}
-          />
-        ))}
-        {tab === "medicine" && medicine.map((item) => (
-          <MedCard
-            key={item.id}
-            item={item}
-            onUpdate={async (actionType, amount) => {
-              if (!amount || isNaN(parseInt(amount))) {
-                Alert.alert("Enter amount", "Please type a number first.");
-                return;
-              }
-              try {
-                await api.updateMedicineStock(item.id, actionType, parseInt(amount));
-                Alert.alert(
-                  actionType === "deduct" ? "Used!" : "Restocked!",
-                  `${item.name} stock updated.`
-                );
-                load();
-              } catch (e) {
-                Alert.alert("Error", e.message);
-              }
-            }}
-          />
-        ))}
+        {/* Add button */}
+        <TouchableOpacity style={s.addBtn}
+          onPress={() => tab === "feed" ? setAddFeedModal(true) : setAddMedModal(true)}>
+          <Text style={s.addBtnText}>+ Add / Update {tab === "feed" ? "Feed" : "Medicine"}</Text>
+        </TouchableOpacity>
+
+        {/* Feed cards */}
+        {tab === "feed" && (
+          feed.length === 0
+            ? <EmptyState icon="🌾" text="No feed stock available" sub="Tap the button above to add feed" />
+            : feed.map(item => {
+              const stock    = parseFloat(item.stock_kg);
+              const isOut    = stock <= 0;
+              const isLow    = !isOut && stock <= 25;
+              const pct      = item.days_remaining ? Math.min(100, (item.days_remaining / 30) * 100) : 0;
+              const barColor = isOut ? COLORS.danger : isLow ? COLORS.warning : COLORS.primary;
+              const badgeLabel = isOut ? "No Stock" : isLow ? "Low Stock" : "Good";
+              const badgeBg    = isOut ? COLORS.dangerBg : isLow ? COLORS.warningBg : COLORS.healthyBg;
+              const badgeColor = isOut ? COLORS.danger : isLow ? COLORS.warning : COLORS.healthy;
+
+              return (
+                <View key={item.id} style={[s.invCard, isOut && s.invCardDanger, isLow && !isOut && s.invCardWarn]}>
+                  <View style={s.invHeader}>
+                    <View style={s.invIconWrap}>
+                      <Text style={{ fontSize: 26 }}>🌾</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.invName}>{item.feed_type_display}</Text>
+                      <Text style={s.invSub}>Daily usage: {item.daily_usage_kg} kg/day</Text>
+                    </View>
+                    <View style={{ alignItems: "flex-end", gap: 4 }}>
+                      <View style={[s.invBadge, { backgroundColor: badgeBg }]}>
+                        <Text style={[s.invBadgeText, { color: badgeColor }]}>{badgeLabel}</Text>
+                      </View>
+                      <TouchableOpacity onPress={() => removeFeed(item)}>
+                        <Text style={{ fontSize: 13, color: COLORS.textMuted }}>🗑</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  <View style={s.stockRow}>
+                    <Text style={s.stockCurrent}>{item.stock_kg}</Text>
+                    <Text style={s.stockSlash}> kg remaining</Text>
+                  </View>
+
+                  <View style={s.progressBg}>
+                    <View style={[s.progressFill, { width: pct + "%", backgroundColor: barColor }]} />
+                  </View>
+
+                  <View style={s.inputRow}>
+                    <View style={s.inputGroup}>
+                      <Text style={s.inputLabel}>Log usage (kg)</Text>
+                      <View style={s.inputWrap}>
+                        <TextInput style={s.numInput} placeholder="kg"
+                          placeholderTextColor={COLORS.textMuted} keyboardType="decimal-pad"
+                          value={usageAmount[item.id] || ""}
+                          onChangeText={v => setUsageAmount(p => ({ ...p, [item.id]: v }))} />
+                        <TouchableOpacity style={[s.inputBtn, { backgroundColor: COLORS.dangerBg }]}
+                          onPress={() => logUsage(item)}>
+                          <Text style={[s.inputBtnText, { color: COLORS.danger }]}>Use</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                    <View style={s.inputGroup}>
+                      <Text style={s.inputLabel}>Restock (kg)</Text>
+                      <View style={s.inputWrap}>
+                        <TextInput style={s.numInput} placeholder="kg"
+                          placeholderTextColor={COLORS.textMuted} keyboardType="decimal-pad"
+                          value={restockAmount[item.id] || ""}
+                          onChangeText={v => setRestockAmount(p => ({ ...p, [item.id]: v }))} />
+                        <TouchableOpacity style={[s.inputBtn, { backgroundColor: COLORS.primaryLight }]}
+                          onPress={() => restockFeed(item)}>
+                          <Text style={[s.inputBtnText, { color: COLORS.primary }]}>Add</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              );
+            })
+        )}
+
+        {/* Medicine cards */}
+        {tab === "medicine" && (
+          medicine.length === 0
+            ? <EmptyState icon="💊" text="No medicine in stock" sub="Tap the button above to add medicine" />
+            : medicine.map(item => (
+              <MedCard key={item.id} item={item} onRemove={() => removeMedicine(item)}
+                onUpdate={async (type, amount) => {
+                  if (!amount || isNaN(parseInt(amount))) { Alert.alert("Enter amount", "Type a number first."); return; }
+                  try {
+                    await api.updateMedicineStock(item.id, type, parseInt(amount));
+                    Alert.alert(type === "deduct" ? "Used!" : "Restocked!", `${item.name} updated.`);
+                    load();
+                  } catch (e) { Alert.alert("Error", e.message); }
+                }} />
+            ))
+        )}
       </ScrollView>
 
-      {/* Add Feed Modal */}
+      {/* ── Add Feed Modal ────────────────────────────────────────────────────
+          KeyboardAvoidingView inside the modal fixes iOS where the modal
+          does not automatically adjust for the keyboard.
+          presentationStyle="pageSheet" on iOS means the modal is a sheet —
+          behavior="padding" is correct here.
+          On Android the modal itself is a new window so the OS handles it. */}
       <Modal visible={addFeedModal} animationType="slide" presentationStyle="pageSheet">
-        <View style={{ flex: 1, backgroundColor: "#F8F7F2" }}>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", padding: 20, backgroundColor: "#fff", borderBottomWidth: 0.5, borderBottomColor: "#D3D1C7", alignItems: "center" }}>
-            <Text style={{ fontSize: 17, fontWeight: "700" }}>Add new feed</Text>
-            <TouchableOpacity onPress={() => setAddFeedModal(false)}>
-              <Text style={{ color: "#888780" }}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={{ padding: 20 }}>
-            <Text style={styles.fieldLabel}>Feed type</Text>
-            {[["starter","Luntian Starter"],["grower","Luntian Grower"],["finisher","Luntian Finisher"],["lactation","Sow Lactation Mix"]].map(([val, label]) => (
-              <TouchableOpacity key={val}
-                style={{ flexDirection: "row", alignItems: "center", padding: 12, backgroundColor: newFeed.feed_type === val ? "#E1F5EE" : "#fff", borderRadius: 8, marginBottom: 6, borderWidth: 0.5, borderColor: newFeed.feed_type === val ? "#1D9E75" : "#D3D1C7" }}
-                onPress={() => setNewFeed(f => ({ ...f, feed_type: val }))}>
-                <Text style={{ fontSize: 14, color: newFeed.feed_type === val ? "#0F6E56" : "#2C2C2A", fontWeight: newFeed.feed_type === val ? "700" : "400" }}>{label}</Text>
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <View style={s.modal}>
+            <View style={s.modalHeader}>
+              <Text style={s.modalTitle}>Add / Update Feed</Text>
+              <TouchableOpacity onPress={() => setAddFeedModal(false)}>
+                <Text style={s.modalClose}>✕</Text>
               </TouchableOpacity>
-            ))}
-            <Text style={[styles.fieldLabel, { marginTop: 14 }]}>Stock (kg) *</Text>
-            <TextInput style={styles.medInput} value={newFeed.stock_kg} onChangeText={v => setNewFeed(f => ({ ...f, stock_kg: v }))} placeholder="e.g. 50" placeholderTextColor="#B4B2A9" keyboardType="decimal-pad" />
-            <Text style={[styles.fieldLabel, { marginTop: 14 }]}>Daily usage (kg)</Text>
-            <TextInput style={styles.medInput} value={newFeed.daily_usage_kg} onChangeText={v => setNewFeed(f => ({ ...f, daily_usage_kg: v }))} placeholder="e.g. 5" placeholderTextColor="#B4B2A9" keyboardType="decimal-pad" />
-            <TouchableOpacity style={{ marginTop: 24, backgroundColor: "#1D9E75", borderRadius: 12, padding: 15, alignItems: "center" }} onPress={saveNewFeed} disabled={addingSaving}>
-              {addingSaving ? <ActivityIndicator color="#fff" /> : <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>Save feed</Text>}
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Add Medicine Modal */}
-      <Modal visible={addMedModal} animationType="slide" presentationStyle="pageSheet">
-        <View style={{ flex: 1, backgroundColor: "#F8F7F2" }}>
-          <View style={{ flexDirection: "row", justifyContent: "space-between", padding: 20, backgroundColor: "#fff", borderBottomWidth: 0.5, borderBottomColor: "#D3D1C7", alignItems: "center" }}>
-            <Text style={{ fontSize: 17, fontWeight: "700" }}>Add medicine / vitamin</Text>
-            <TouchableOpacity onPress={() => setAddMedModal(false)}>
-              <Text style={{ color: "#888780" }}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={{ padding: 20 }}>
-            <Text style={styles.fieldLabel}>Name *</Text>
-            <TextInput style={styles.medInput} value={newMed.name} onChangeText={v => setNewMed(f => ({ ...f, name: v }))} placeholder="e.g. Vitamin C" placeholderTextColor="#B4B2A9" />
-
-            <Text style={[styles.fieldLabel, { marginTop: 14 }]}>Category</Text>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 4 }}>
-              {[["antibiotic","Antibiotic"],["antiparasitic","Antiparasitic"],["vitamin","Vitamin"],["vaccine","Vaccine"],["other","Other"]].map(([val, label]) => (
+            </View>
+            <ScrollView
+              style={{ padding: 20 }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={s.fieldLabel}>Feed type</Text>
+              {[
+                ["starter",   "Luntian Starter"],
+                ["grower",    "Luntian Grower"],
+                ["finisher",  "Luntian Finisher"],
+                ["lactation", "Sow Lactation Mix"],
+              ].map(([val, label]) => (
                 <TouchableOpacity key={val}
-                  style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, borderWidth: 0.5, borderColor: newMed.category === val ? "#1D9E75" : "#D3D1C7", backgroundColor: newMed.category === val ? "#1D9E75" : "#F8F7F2" }}
-                  onPress={() => setNewMed(f => ({ ...f, category: val }))}>
-                  <Text style={{ fontSize: 13, color: newMed.category === val ? "#fff" : "#5F5E5A", fontWeight: "500" }}>{label}</Text>
+                  style={[s.feedOption, newFeed.feed_type === val && s.feedOptionActive]}
+                  onPress={() => setNewFeed(f => ({ ...f, feed_type: val }))}>
+                  <Text style={[s.feedOptionText, newFeed.feed_type === val && { color: COLORS.primary, fontWeight: "700" }]}>
+                    {label}
+                  </Text>
                 </TouchableOpacity>
               ))}
-            </View>
 
-            <Text style={[styles.fieldLabel, { marginTop: 14 }]}>Quantity *</Text>
-            <TextInput style={styles.medInput} value={newMed.quantity} onChangeText={v => setNewMed(f => ({ ...f, quantity: v }))} placeholder="e.g. 30" placeholderTextColor="#B4B2A9" keyboardType="number-pad" />
+              <Text style={[s.fieldLabel, { marginTop: 16 }]}>Stock to add (kg) *</Text>
+              <TextInput style={s.modalInput}
+                value={newFeed.stock_kg}
+                onChangeText={v => setNewFeed(f => ({ ...f, stock_kg: v }))}
+                placeholder="e.g. 50" placeholderTextColor={COLORS.textMuted}
+                keyboardType="decimal-pad" returnKeyType="next" />
 
-            <Text style={[styles.fieldLabel, { marginTop: 14 }]}>Unit</Text>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-              {["doses","tabs","vials","sachets","bottles","ml"].map(u => (
-                <TouchableOpacity key={u}
-                  style={{ paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, borderWidth: 0.5, borderColor: newMed.unit === u ? "#1D9E75" : "#D3D1C7", backgroundColor: newMed.unit === u ? "#1D9E75" : "#F8F7F2" }}
-                  onPress={() => setNewMed(f => ({ ...f, unit: u }))}>
-                  <Text style={{ fontSize: 13, color: newMed.unit === u ? "#fff" : "#5F5E5A" }}>{u}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+              <Text style={[s.fieldLabel, { marginTop: 14 }]}>Daily usage (kg)</Text>
+              <TextInput style={s.modalInput}
+                value={newFeed.daily_usage_kg}
+                onChangeText={v => setNewFeed(f => ({ ...f, daily_usage_kg: v }))}
+                placeholder="e.g. 5" placeholderTextColor={COLORS.textMuted}
+                keyboardType="decimal-pad" returnKeyType="done" />
 
-            <Text style={[styles.fieldLabel, { marginTop: 14 }]}>Low stock alert threshold</Text>
-            <TextInput style={styles.medInput} value={newMed.low_stock_threshold} onChangeText={v => setNewMed(f => ({ ...f, low_stock_threshold: v }))} placeholder="e.g. 10" placeholderTextColor="#B4B2A9" keyboardType="number-pad" />
-
-            <TouchableOpacity style={{ marginTop: 24, backgroundColor: "#1D9E75", borderRadius: 12, padding: 15, alignItems: "center" }} onPress={saveNewMedicine} disabled={addingSaving}>
-              {addingSaving ? <ActivityIndicator color="#fff" /> : <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>Save medicine</Text>}
-            </TouchableOpacity>
+              <TouchableOpacity style={s.saveBtn} onPress={saveNewFeed} disabled={addingSaving}>
+                <Text style={s.saveBtnText}>{addingSaving ? "Saving..." : "Save Feed"}</Text>
+              </TouchableOpacity>
+              <View style={{ height: 40 }} />
+            </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── Add Medicine Modal ───────────────────────────────────────────────── */}
+      <Modal visible={addMedModal} animationType="slide" presentationStyle="pageSheet">
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+        >
+          <View style={s.modal}>
+            <View style={s.modalHeader}>
+              <Text style={s.modalTitle}>Add / Update Medicine</Text>
+              <TouchableOpacity onPress={() => setAddMedModal(false)}>
+                <Text style={s.modalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              style={{ padding: 20 }}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <Text style={s.fieldLabel}>Name *</Text>
+              <TextInput style={s.modalInput}
+                value={newMed.name}
+                onChangeText={v => setNewMed(f => ({ ...f, name: v }))}
+                placeholder="e.g. Vitamin C" placeholderTextColor={COLORS.textMuted}
+                returnKeyType="next" />
+
+              <Text style={[s.fieldLabel, { marginTop: 14 }]}>Category</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {[
+                  ["antibiotic",     "Antibiotic"],
+                  ["antiparasitic",  "Antiparasitic"],
+                  ["vitamin",        "Vitamin"],
+                  ["vaccine",        "Vaccine"],
+                  ["other",          "Other"],
+                ].map(([val, label]) => (
+                  <TouchableOpacity key={val}
+                    style={[s.catChip, newMed.category === val && s.catChipActive]}
+                    onPress={() => setNewMed(f => ({ ...f, category: val }))}>
+                    <Text style={[s.catChipText, newMed.category === val && { color: COLORS.white }]}>
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={[s.fieldLabel, { marginTop: 14 }]}>Quantity *</Text>
+              <TextInput style={s.modalInput}
+                value={newMed.quantity}
+                onChangeText={v => setNewMed(f => ({ ...f, quantity: v }))}
+                placeholder="e.g. 30" placeholderTextColor={COLORS.textMuted}
+                keyboardType="number-pad" returnKeyType="next" />
+
+              <Text style={[s.fieldLabel, { marginTop: 14 }]}>Unit</Text>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                {["doses", "tabs", "vials", "sachets", "bottles", "ml"].map(u => (
+                  <TouchableOpacity key={u}
+                    style={[s.catChip, newMed.unit === u && s.catChipActive]}
+                    onPress={() => setNewMed(f => ({ ...f, unit: u }))}>
+                    <Text style={[s.catChipText, newMed.unit === u && { color: COLORS.white }]}>{u}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <TouchableOpacity style={s.saveBtn} onPress={saveNewMedicine} disabled={addingSaving}>
+                <Text style={s.saveBtnText}>{addingSaving ? "Saving..." : "Save Medicine"}</Text>
+              </TouchableOpacity>
+              <View style={{ height: 40 }} />
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
 }
- 
-function FeedCard({ item, usageAmount, setUsageAmount, onLogUsage, restockAmount, setRestockAmount, onRestock }) {
-  const isLow = item.days_remaining !== null && item.days_remaining <= 5;
-  return (
-    <View style={[styles.card, isLow && styles.cardWarning]}>
-      <View style={styles.cardHeader}>
-        <Text style={styles.cardTitle}>{item.feed_type_display}</Text>
-        {isLow && <View style={styles.badgeDanger}><Text style={styles.badgeDangerText}>Low stock</Text></View>}
-      </View>
-      <Text style={styles.bigValue}>{item.stock_kg} kg</Text>
-      <View style={styles.metaRow}>
-        <Text style={styles.meta}>Used: {item.daily_usage_kg} kg/day</Text>
-        <Text style={styles.meta}>{item.days_remaining !== null ? item.days_remaining + " days left" : "—"}</Text>
-      </View>
-      <View style={styles.progressBg}>
-        <View style={[styles.progressFill, {
-          width: Math.min(100, (item.days_remaining || 0) / 30 * 100) + "%",
-          backgroundColor: isLow ? "#EF9F27" : "#1D9E75",
-        }]} />
-      </View>
-      {/* Use today */}
-      <Text style={{ fontSize: 11, color: "#888780", marginTop: 12, marginBottom: 4 }}>Log usage</Text>
-      <View style={{ flexDirection: "row", gap: 8 }}>
-        <TextInput
-          style={{ flex: 1, backgroundColor: "#F8F7F2", borderRadius: 8, padding: 10, fontSize: 14, borderWidth: 0.5, borderColor: "#D3D1C7", color: "#2C2C2A" }}
-          placeholder="kg used today"
-          placeholderTextColor="#B4B2A9"
-          keyboardType="decimal-pad"
-          value={usageAmount[item.id] || ""}
-          onChangeText={(v) => setUsageAmount(prev => ({ ...prev, [item.id]: v }))}
-        />
-        <TouchableOpacity style={styles.logBtn} onPress={onLogUsage}>
-          <Text style={styles.logBtnText}>Use</Text>
-        </TouchableOpacity>
-      </View>
 
-      {/* Restock */}
-      <Text style={{ fontSize: 11, color: "#888780", marginTop: 10, marginBottom: 4 }}>Restock</Text>
-      <View style={{ flexDirection: "row", gap: 8 }}>
-        <TextInput
-          style={{ flex: 1, backgroundColor: "#F8F7F2", borderRadius: 8, padding: 10, fontSize: 14, borderWidth: 0.5, borderColor: "#D3D1C7", color: "#2C2C2A" }}
-          placeholder="kg to add"
-          placeholderTextColor="#B4B2A9"
-          keyboardType="decimal-pad"
-          value={restockAmount[item.id] || ""}
-          onChangeText={(v) => setRestockAmount(prev => ({ ...prev, [item.id]: v }))}
-        />
-        <TouchableOpacity
-          style={[styles.logBtn, { backgroundColor: "#E1F5EE" }]}
-          onPress={onRestock}
-        >
-          <Text style={[styles.logBtnText, { color: "#0F6E56" }]}>Add</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
- 
-function MedCard({ item, onUpdate }) {
+function MedCard({ item, onUpdate, onRemove }) {
   const [amount, setAmount] = useState("");
+  const isOut      = item.quantity === 0;
+  const isLow      = !isOut && item.is_low_stock;
+  const badgeLabel = isOut ? "No Stock" : isLow ? "Low Stock" : "Good";
+  const badgeBg    = isOut ? COLORS.dangerBg : isLow ? COLORS.warningBg : COLORS.healthyBg;
+  const badgeColor = isOut ? COLORS.danger : isLow ? COLORS.warning : COLORS.healthy;
 
   return (
-    <View style={[styles.card, item.is_low_stock && styles.cardWarning]}>
-      <View style={styles.cardHeader}>
-        <View>
-          <Text style={styles.cardTitle}>{item.name}</Text>
-          <Text style={styles.cardSub}>{item.category_display}</Text>
+    <View style={[s.invCard, isOut && s.invCardDanger, isLow && !isOut && s.invCardWarn]}>
+      <View style={s.invHeader}>
+        <View style={s.invIconWrap}>
+          <Text style={{ fontSize: 26 }}>💊</Text>
         </View>
-        {item.is_low_stock && (
-          <View style={styles.badgeDanger}>
-            <Text style={styles.badgeDangerText}>Low stock</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={s.invName}>{item.name}</Text>
+          <Text style={s.invSub}>{item.category_display}</Text>
+        </View>
+        <View style={{ alignItems: "flex-end", gap: 4 }}>
+          <View style={[s.invBadge, { backgroundColor: badgeBg }]}>
+            <Text style={[s.invBadgeText, { color: badgeColor }]}>{badgeLabel}</Text>
           </View>
-        )}
+          <TouchableOpacity onPress={onRemove}>
+            <Text style={{ fontSize: 13, color: COLORS.textMuted }}>🗑</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      <Text style={styles.bigValue}>
-        {item.quantity} <Text style={styles.unit}>{item.unit}</Text>
-      </Text>
+      <Text style={s.medQty}>{item.quantity} <Text style={s.medUnit}>{item.unit}</Text></Text>
+      {item.expiry_date && <Text style={s.invSub}>Expires: {item.expiry_date}</Text>}
 
-      {item.expiry_date && (
-        <Text style={styles.meta}>Expires: {item.expiry_date}</Text>
-      )}
-
-      {/* Stock update controls */}
-      <View style={{ flexDirection: "row", gap: 8, marginTop: 12, alignItems: "center" }}>
-        <TextInput
-          style={{
-            flex: 1, backgroundColor: "#F8F7F2", borderRadius: 8,
-            padding: 10, fontSize: 14, borderWidth: 0.5,
-            borderColor: "#D3D1C7", color: "#2C2C2A",
-          }}
-          placeholder="Amount"
-          placeholderTextColor="#B4B2A9"
-          keyboardType="number-pad"
-          value={amount}
-          onChangeText={setAmount}
-        />
-        <TouchableOpacity
-          style={[styles.logBtn, { paddingHorizontal: 12 }]}
-          onPress={() => { onUpdate("deduct", amount); setAmount(""); }}
-        >
-          <Text style={styles.logBtnText}>Use</Text>
+      <View style={s.inputWrap}>
+        <TextInput style={[s.numInput, { flex: 1 }]} placeholder="Amount"
+          placeholderTextColor={COLORS.textMuted} keyboardType="number-pad"
+          value={amount} onChangeText={setAmount} returnKeyType="done" />
+        <TouchableOpacity style={[s.inputBtn, { backgroundColor: COLORS.dangerBg }]}
+          onPress={() => { onUpdate("deduct", amount); setAmount(""); }}>
+          <Text style={[s.inputBtnText, { color: COLORS.danger }]}>Use</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.logBtn, { paddingHorizontal: 12, backgroundColor: "#E1F5EE" }]}
-          onPress={() => { onUpdate("restock", amount); setAmount(""); }}
-        >
-          <Text style={[styles.logBtnText, { color: "#0F6E56" }]}>Restock</Text>
+        <TouchableOpacity style={[s.inputBtn, { backgroundColor: COLORS.primaryLight }]}
+          onPress={() => { onUpdate("restock", amount); setAmount(""); }}>
+          <Text style={[s.inputBtnText, { color: COLORS.primary }]}>Restock</Text>
         </TouchableOpacity>
       </View>
     </View>
   );
 }
- 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F8F7F2" },
-  tabRow: { flexDirection: "row", backgroundColor: "#fff", borderBottomWidth: 0.5, borderBottomColor: "#D3D1C7" },
-  tab: { flex: 1, paddingVertical: 14, alignItems: "center" },
-  tabActive: { borderBottomWidth: 2, borderBottomColor: "#1D9E75" },
-  tabText: { fontSize: 13, color: "#888780", fontWeight: "500" },
-  tabTextActive: { color: "#1D9E75", fontWeight: "700" },
-  card: { backgroundColor: "#fff", borderRadius: 12, padding: 16, borderWidth: 0.5, borderColor: "#D3D1C7" },
-  cardWarning: { borderColor: "#EF9F27", borderWidth: 1 },
-  cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 },
-  cardTitle: { fontSize: 15, fontWeight: "700", color: "#2C2C2A" },
-  cardSub: { fontSize: 12, color: "#888780", marginTop: 1 },
-  bigValue: { fontSize: 26, fontWeight: "700", color: "#2C2C2A" },
-  unit: { fontSize: 14, fontWeight: "400", color: "#888780" },
-  metaRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 6 },
-  meta: { fontSize: 12, color: "#888780" },
-  progressBg: { height: 6, backgroundColor: "#E8E7E0", borderRadius: 3, marginTop: 10, overflow: "hidden" },
-  progressFill: { height: 6, borderRadius: 3 },
-  logBtn: { backgroundColor: "#E1F5EE", borderRadius: 8, paddingVertical: 10, paddingHorizontal: 16, alignItems: "center", justifyContent: "center" },
-  logBtnText: { color: "#0F6E56", fontWeight: "600", fontSize: 13 },
-  badgeDanger: { backgroundColor: "#FAEEDA", borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
-  badgeDangerText: { color: "#854F0B", fontSize: 11, fontWeight: "600" },
-  fieldLabel: { fontSize: 13, color: "#5F5E5A", marginBottom: 6, fontWeight: "500" },
-  medInput: { backgroundColor: "#fff", borderRadius: 10, padding: 12, fontSize: 14, color: "#2C2C2A", borderWidth: 0.5, borderColor: "#D3D1C7" },
+
+function EmptyState({ icon, text, sub }) {
+  return (
+    <View style={{ alignItems: "center", paddingVertical: 48, gap: 8 }}>
+      <Text style={{ fontSize: 40 }}>{icon}</Text>
+      <Text style={{ fontSize: 15, fontWeight: "700", color: COLORS.textPrimary }}>{text}</Text>
+      <Text style={{ fontSize: 13, color: COLORS.textMuted, textAlign: "center" }}>{sub}</Text>
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  screen:   { flex: 1, backgroundColor: COLORS.screenBg },
+  tabWrap:  { backgroundColor: COLORS.white, padding: 12, paddingBottom: 8, ...SHADOW.sm },
+  tabPills: { flexDirection: "row", backgroundColor: COLORS.screenBg, borderRadius: RADIUS.full, padding: 4 },
+  tabPill:  { flex: 1, paddingVertical: 8, borderRadius: RADIUS.full, alignItems: "center" },
+  tabPillActive:    { backgroundColor: COLORS.primary },
+  tabPillText:      { fontSize: 13, fontWeight: "600", color: COLORS.textSecondary },
+  tabPillTextActive:{ color: COLORS.white },
+
+  addBtn:    { backgroundColor: COLORS.primary, borderRadius: RADIUS.xl, padding: 14, alignItems: "center" },
+  addBtnText:{ color: COLORS.white, fontWeight: "700", fontSize: 14 },
+
+  invCard:       { backgroundColor: COLORS.white, borderRadius: RADIUS.xl, padding: 16, ...SHADOW.sm },
+  invCardWarn:   { borderLeftWidth: 3, borderLeftColor: COLORS.warning },
+  invCardDanger: { borderLeftWidth: 3, borderLeftColor: COLORS.danger },
+  invHeader:     { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 10 },
+  invIconWrap:   { width: 48, height: 48, borderRadius: 24, backgroundColor: COLORS.primaryLight, justifyContent: "center", alignItems: "center" },
+  invName:       { fontSize: 15, fontWeight: "700", color: COLORS.textPrimary },
+  invSub:        { fontSize: 11, color: COLORS.textMuted, marginTop: 2 },
+  invBadge:      { paddingHorizontal: 8, paddingVertical: 3, borderRadius: RADIUS.full },
+  invBadgeText:  { fontSize: 11, fontWeight: "600" },
+
+  stockRow:    { flexDirection: "row", alignItems: "baseline", marginBottom: 8 },
+  stockCurrent:{ fontSize: 26, fontWeight: "800", color: COLORS.textPrimary },
+  stockSlash:  { fontSize: 13, color: COLORS.textMuted, marginLeft: 4 },
+
+  progressBg:   { height: 8, backgroundColor: COLORS.borderLight, borderRadius: 4, overflow: "hidden", marginBottom: 12 },
+  progressFill: { height: 8, borderRadius: 4 },
+
+  inputRow:    { flexDirection: "row", gap: 10 },
+  inputGroup:  { flex: 1 },
+  inputLabel:  { fontSize: 11, color: COLORS.textMuted, marginBottom: 4, fontWeight: "500" },
+  inputWrap:   { flexDirection: "row", gap: 6, marginTop: 10, alignItems: "center" },
+  numInput:    { flex: 1, backgroundColor: COLORS.screenBg, borderRadius: RADIUS.md, padding: 9, fontSize: 14, color: COLORS.textPrimary, borderWidth: 1, borderColor: COLORS.border },
+  inputBtn:    { paddingHorizontal: 12, paddingVertical: 9, borderRadius: RADIUS.md },
+  inputBtnText:{ fontSize: 13, fontWeight: "700" },
+
+  medQty:  { fontSize: 24, fontWeight: "800", color: COLORS.textPrimary, marginBottom: 4 },
+  medUnit: { fontSize: 14, fontWeight: "400", color: COLORS.textMuted },
+
+  modal:       { flex: 1, backgroundColor: COLORS.screenBg },
+  modalHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 20, backgroundColor: COLORS.white, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  modalTitle:  { fontSize: 17, fontWeight: "700", color: COLORS.textPrimary },
+  modalClose:  { fontSize: 18, color: COLORS.textMuted, padding: 4 },
+  modalInput:  { backgroundColor: COLORS.white, borderRadius: RADIUS.md, padding: 13, fontSize: 14, color: COLORS.textPrimary, borderWidth: 1, borderColor: COLORS.border, marginBottom: 4 },
+  fieldLabel:  { fontSize: 13, fontWeight: "600", color: COLORS.textSecondary, marginBottom: 8 },
+  feedOption:       { padding: 13, backgroundColor: COLORS.white, borderRadius: RADIUS.md, marginBottom: 6, borderWidth: 1, borderColor: COLORS.border },
+  feedOptionActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primaryLight },
+  feedOptionText:   { fontSize: 14, color: COLORS.textPrimary },
+  catChip:      { paddingHorizontal: 14, paddingVertical: 8, borderRadius: RADIUS.full, backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border },
+  catChipActive:{ backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  catChipText:  { fontSize: 13, color: COLORS.textSecondary, fontWeight: "500" },
+  saveBtn:      { marginTop: 24, backgroundColor: COLORS.primary, borderRadius: RADIUS.xl, padding: 15, alignItems: "center" },
+  saveBtnText:  { color: COLORS.white, fontWeight: "700", fontSize: 15 },
 });

@@ -1,220 +1,294 @@
 import React, { useState, useCallback } from "react";
+import {
+  View, Text, ScrollView, StyleSheet,
+  ActivityIndicator, TouchableOpacity, Dimensions,
+} from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
-import { View, Text, ScrollView, StyleSheet, ActivityIndicator, Dimensions } from "react-native";
 import { api } from "../services/api";
- 
-const SCREEN_W = Dimensions.get("window").width;
- 
-function BarChart({ data, maxValue, color = "#1D9E75" }) {
-  return (
-    <View style={chart.wrap}>
-      {data.map((item, i) => {
-        const pct = maxValue > 0 ? item.value / maxValue : 0;
-        return (
-          <View key={i} style={chart.col}>
-            <Text style={chart.val}>{item.value}</Text>
-            <View style={chart.barBg}>
-              <View style={[chart.barFill, { height: Math.round(pct * 100) + "%", backgroundColor: color }]} />
-            </View>
-            <Text style={chart.label}>{item.label}</Text>
-          </View>
-        );
-      })}
-    </View>
-  );
-}
- 
-const chart = StyleSheet.create({
-  wrap: { flexDirection: "row", alignItems: "flex-end", gap: 8, height: 150, paddingTop: 20 },
-  col: { flex: 1, alignItems: "center", height: "100%" },
-  val: { fontSize: 11, color: "#5F5E5A", fontWeight: "600", marginBottom: 4 },
-  barBg: { flex: 1, width: "70%", backgroundColor: "#E8E7E0", borderRadius: 4, justifyContent: "flex-end", overflow: "hidden" },
-  barFill: { width: "100%", borderRadius: 4 },
-  label: { fontSize: 10, color: "#888780", marginTop: 4, textAlign: "center" },
-});
+import { COLORS, RADIUS, SHADOW } from "../theme";
 
 export default function AnalyticsScreen() {
-  const [pigs, setPigs] = useState([]);
+  const SCREEN_W = Dimensions.get("window").width - 64;
+  const [pigs, setPigs]       = useState([]);
   const [sowPerf, setSowPerf] = useState([]);
   const [loading, setLoading] = useState(true);
- 
-  useFocusEffect(
-    useCallback(() => {
-      api.getPigs().then((d) => setPigs(d.results || d)).catch(console.error).finally(() => setLoading(false));
-      api.getSowPerformance().then(setSowPerf).catch(console.error);
-    }, [])
+  const [period, setPeriod]   = useState("This Month");
+
+  useFocusEffect(useCallback(() => {
+    api.getPigs()
+      .then(p => setPigs(p.results || p))
+      .catch(console.error)
+      .finally(() => setLoading(false));
+
+    api.getSowPerformance()
+      .then(sp => setSowPerf(sp || []))
+      .catch(() => setSowPerf([])); // silently fail if no data
+  }, []));
+
+  if (loading) return (
+    <View style={s.center}><ActivityIndicator size="large" color={COLORS.primary} /></View>
   );
- 
-  if (loading) return <ActivityIndicator style={{ marginTop: 60 }} color="#1D9E75" />;
- 
-  const total = pigs.length;
-  const stages = ["piglet", "weaner", "grower", "finisher", "breeder"];
-  const stageCounts = stages.map((s) => ({
+
+  const total    = pigs.length;
+  const healthy  = pigs.filter(p => p.health_status === "healthy").length;
+  const sick     = pigs.filter(p => p.health_status === "under_treatment").length;
+  const critical = pigs.filter(p => p.health_status === "critical").length;
+  const female   = pigs.filter(p => p.gender === "female").length;
+  const male     = pigs.filter(p => p.gender === "male").length;
+  const avgAge   = total > 0 ? Math.round(pigs.reduce((a, p) => a + (p.age_in_months || 0), 0) / total) : 0;
+  const healthRate = total > 0 ? Math.round((healthy / total) * 100) : 0;
+
+  const stages = ["piglet","weaner","grower","finisher","breeder"];
+  const stageCounts = stages.map(s => ({
     label: s.charAt(0).toUpperCase() + s.slice(1),
-    value: pigs.filter((p) => p.growth_stage === s).length,
+    value: pigs.filter(p => p.growth_stage === s).length,
+    color: { piglet: COLORS.purple, weaner: COLORS.amber, grower: COLORS.primary, finisher: COLORS.blue, breeder: COLORS.pink }[s],
   }));
+  const maxStage = Math.max(...stageCounts.map(d => d.value), 1);
+
   const healthData = [
-    { label: "Healthy",   value: pigs.filter((p) => p.health_status === "healthy").length,         color: "#639922" },
-    { label: "Treatment", value: pigs.filter((p) => p.health_status === "under_treatment").length,  color: "#EF9F27" },
-    { label: "Critical",  value: pigs.filter((p) => p.health_status === "critical").length,          color: "#E24B4A" },
-  ];
-  const genderData = [
-    { label: "Female", value: pigs.filter((p) => p.gender === "female").length, color: "#D4537E" },
-    { label: "Male",   value: pigs.filter((p) => p.gender === "male").length,   color: "#185FA5" },
-  ];
-  const maxStage  = Math.max(...stageCounts.map((d) => d.value), 1);
-  const maxHealth = Math.max(...healthData.map((d) => d.value), 1);
-  const avgAge    = total > 0 ? Math.round(pigs.reduce((a, p) => a + (p.age_in_months || 0), 0) / total) : 0;
-  const healthRate = total > 0 ? Math.round((healthData[0].value / total) * 100) : 0;
- 
+    { label: "Healthy",   value: healthy,  pct: total > 0 ? (healthy/total*100).toFixed(1) : 0,  color: COLORS.healthy, icon: "💚" },
+    { label: "Sick",      value: sick,     pct: total > 0 ? (sick/total*100).toFixed(1) : 0,     color: COLORS.warning, icon: "🟡" },
+    { label: "Under Obs.",value: sick,     pct: total > 0 ? (sick/total*100).toFixed(1) : 0,     color: COLORS.warning, icon: "🟡" },
+    { label: "Critical",  value: critical, pct: total > 0 ? (critical/total*100).toFixed(1) : 0, color: COLORS.danger,  icon: "🔴" },
+  ].filter((d, i, arr) => i === 0 || arr[i].label !== arr[i-1].label);
+
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ padding: 16, gap: 14 }}>
-      <View style={styles.metricRow}>
-        <StatCard label="Total pigs" value={total} />
-        <StatCard label="Avg age" value={avgAge + " mo"} />
-        <StatCard label="Health rate" value={healthRate + "%"} />
+    <ScrollView style={s.screen} contentContainerStyle={{ padding: 16, gap: 14, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+
+      {/* Period selector */}
+      <View style={s.periodRow}>
+        <Text style={s.pageTitle}>Analytics</Text>
+        <TouchableOpacity style={s.periodBtn}>
+          <Text style={s.periodBtnText}>{period} ▾</Text>
+        </TouchableOpacity>
       </View>
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Pigs by growth stage</Text>
-        <BarChart data={stageCounts} maxValue={maxStage} color="#1D9E75" />
+
+      {/* KPI cards */}
+      <View style={s.kpiGrid}>
+        <KpiCard icon="🐷" label="Total Pigs"   value={total}         color={COLORS.primary} bg={COLORS.primaryLight} />
+        <KpiCard icon="📅" label="Avg Age"       value={`${avgAge} mo`} color={COLORS.blue}   bg={COLORS.blueBg} />
+        <KpiCard icon="💚" label="Health Rate"   value={`${healthRate}%`} color={COLORS.healthy} bg={COLORS.healthyBg} />
+        <KpiCard icon="♀"  label="Female"        value={female}        color={COLORS.pink}    bg="#FDF2F8" />
       </View>
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Health breakdown</Text>
-        <BarChart data={healthData} maxValue={maxHealth} color="#639922" />
-        <View style={styles.legendRow}>
-          {healthData.map((d) => (
-            <View key={d.label} style={styles.legendItem}>
-              <View style={[styles.legendDot, { backgroundColor: d.color }]} />
-              <Text style={styles.legendText}>{d.label}</Text>
+
+      {/* Health breakdown — donut style */}
+      <View style={s.card}>
+        <Text style={s.cardTitle}>Health Breakdown</Text>
+        <View style={s.healthBreakdown}>
+          {/* Donut placeholder with total */}
+          <View style={s.donutWrap}>
+            <View style={s.donut}>
+              <Text style={s.donutTotal}>{total}</Text>
+              <Text style={s.donutLabel}>Total</Text>
             </View>
-          ))}
-        </View>
-      </View>
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Gender split</Text>
-        <View style={styles.genderRow}>
-          {genderData.map((g) => (
-            <View key={g.label} style={styles.genderCard}>
-              <Text style={[styles.genderValue, { color: g.color }]}>{g.value}</Text>
-              <Text style={styles.genderLabel}>{g.label}</Text>
-              <Text style={styles.genderPct}>{Math.round((g.value / (total || 1)) * 100)}%</Text>
-              <View style={styles.genderBar}>
-                <View style={[styles.genderFill, { width: Math.round((g.value / (total || 1)) * 100) + "%", backgroundColor: g.color }]} />
-              </View>
-            </View>
-          ))}
-        </View>
-      </View>
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>All pigs overview</Text>
-        <View style={styles.tableHeader}>
-          <Text style={[styles.th, { flex: 2 }]}>Name</Text>
-          <Text style={styles.th}>Stage</Text>
-          <Text style={styles.th}>Weight</Text>
-          <Text style={styles.th}>Status</Text>
-        </View>
-        {pigs.map((p) => (
-          <View key={p.id} style={styles.tableRow}>
-            <Text style={[styles.td, { flex: 2, fontWeight: "600" }]}>{p.name}</Text>
-            <Text style={styles.td}>{p.growth_stage}</Text>
-            <Text style={styles.td}>{p.latest_weight ? p.latest_weight + "kg" : "—"}</Text>
-            <Text style={[styles.td, {
-              color: p.health_status === "healthy" ? "#3B6D11" :
-                     p.health_status === "critical" ? "#A32D2D" : "#854F0B"
-            }]}>{p.health_status === "under_treatment" ? "Treat." : p.health_status}</Text>
+            {/* Colored arcs simulated with stacked rings */}
+            <View style={[s.donutRing, { borderColor: COLORS.healthy }]} />
           </View>
-        ))}
+
+          {/* Legend */}
+          <View style={s.healthLegend}>
+            {[
+              { label: "Healthy",    value: healthy,  pct: total > 0 ? Math.round(healthy/total*100) : 0,  color: COLORS.healthy },
+              { label: "Sick",       value: sick,     pct: total > 0 ? Math.round(sick/total*100) : 0,     color: COLORS.warning },
+              { label: "Under Obs.", value: sick,     pct: total > 0 ? Math.round(sick/total*100) : 0,     color: COLORS.amber   },
+              { label: "Critical",   value: critical, pct: total > 0 ? Math.round(critical/total*100) : 0, color: COLORS.danger  },
+            ].filter((item, index, self) => index === self.findIndex(i => i.label === item.label))
+             .map((item, i) => (
+              <View key={i} style={s.legendRow}>
+                <View style={[s.legendDot, { backgroundColor: item.color }]} />
+                <Text style={s.legendLabel}>{item.label}</Text>
+                <Text style={s.legendCount}>({item.value})</Text>
+                <Text style={[s.legendPct, { color: item.color }]}>{item.pct}%</Text>
+              </View>
+            ))}
+          </View>
+        </View>
       </View>
-      <View style={{ height: 20 }} />
-      {sowPerf.length > 0 && (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>🏆 Sow Performance Ranking</Text>
-          <Text style={{ fontSize: 12, color: "#888780", marginBottom: 12 }}>
-            Ranked by avg live piglets per litter and survival rate
-          </Text>
-          {sowPerf.map((sow, i) => {
-            const ratingColor = {
-              Excellent: "#3B6D11", Good: "#185FA5",
-              Average: "#854F0B",   Poor: "#A32D2D",
-            }[sow.performance_rating] || "#5F5E5A";
 
-            const ratingBg = {
-              Excellent: "#EAF3DE", Good: "#E6F1FB",
-              Average: "#FAEEDA",   Poor: "#FCEBEB",
-            }[sow.performance_rating] || "#F1EFE8";
-
-            const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`;
-
+      {/* Stage bar chart */}
+      <View style={s.card}>
+        <Text style={s.cardTitle}>Pigs by Growth Stage</Text>
+        <View style={s.barChart}>
+          {stageCounts.map((item, i) => {
+            const barH = maxStage > 0 ? Math.round((item.value / maxStage) * 100) : 0;
             return (
-              <View key={sow.sow_id} style={{
-                flexDirection: "row", alignItems: "center",
-                paddingVertical: 12, borderBottomWidth: 0.5,
-                borderBottomColor: "#E8E7E0", gap: 12,
-              }}>
-                <Text style={{ fontSize: 20, width: 32 }}>{medal}</Text>
+              <View key={i} style={s.barCol}>
+                <Text style={s.barVal}>{item.value}</Text>
+                <View style={s.barBg}>
+                  <View style={[s.barFill, { height: barH + "%", backgroundColor: item.color }]} />
+                </View>
+                <Text style={[s.barLabel, { color: item.color }]}>{item.label}</Text>
+              </View>
+            );
+          })}
+        </View>
+      </View>
+
+      {/* Gender split */}
+      <View style={s.card}>
+        <Text style={s.cardTitle}>Gender Split</Text>
+        <View style={s.genderRow}>
+          <GenderCard icon="♀" label="Female" value={female} total={total} color={COLORS.pink} bg="#FDF2F8" />
+          <GenderCard icon="♂" label="Male"   value={male}   total={total} color={COLORS.blue} bg={COLORS.blueBg} />
+        </View>
+      </View>
+
+      {/* Sow performance ranking */}
+      {sowPerf.length > 0 && (
+        <View style={s.card}>
+          <Text style={s.cardTitle}>🏆 Sow Performance Ranking</Text>
+          <Text style={s.cardSub}>Ranked by avg live piglets per litter</Text>
+          {sowPerf.map((sow, i) => {
+            const rColor = { Excellent: COLORS.healthy, Good: COLORS.blue, Average: COLORS.warning, Poor: COLORS.danger }[sow.performance_rating] || COLORS.textMuted;
+            const rBg    = { Excellent: COLORS.healthyBg, Good: COLORS.blueBg, Average: COLORS.warningBg, Poor: COLORS.dangerBg }[sow.performance_rating] || COLORS.screenBg;
+            const medal  = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i+1}.`;
+            return (
+              <View key={sow.sow_id} style={s.rankRow}>
+                <Text style={s.rankMedal}>{medal}</Text>
+                <View style={s.rankAvatar}>
+                  <Text style={{ fontSize: 18 }}>🐷</Text>
+                </View>
                 <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    <Text style={{ fontSize: 14, fontWeight: "700", color: "#2C2C2A" }}>
-                      {sow.sow_name}
-                    </Text>
-                    <View style={{ backgroundColor: ratingBg, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 }}>
-                      <Text style={{ fontSize: 11, fontWeight: "700", color: ratingColor }}>
-                        {sow.performance_rating}
-                      </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Text style={s.rankName}>{sow.sow_name}</Text>
+                    <View style={[s.ratingBadge, { backgroundColor: rBg }]}>
+                      <Text style={[s.ratingText, { color: rColor }]}>{sow.performance_rating}</Text>
                     </View>
                   </View>
-                  <Text style={{ fontSize: 12, color: "#888780", marginTop: 3 }}>
-                    {sow.total_litters} litter(s) · Avg {sow.avg_live_piglets} live piglets · {sow.survival_rate}% survival
-                  </Text>
-                  <Text style={{ fontSize: 11, color: "#B4B2A9", marginTop: 1 }}>
-                    Last farrowed: {sow.last_farrowed}
+                  <Text style={s.rankDetail}>
+                    {sow.total_litters} litter(s)  •  Avg {sow.avg_live_piglets} live  •  {sow.survival_rate}% survival
                   </Text>
                 </View>
-                <View style={{ alignItems: "flex-end" }}>
-                  <Text style={{ fontSize: 18, fontWeight: "700", color: ratingColor }}>
-                    {sow.avg_live_piglets}
-                  </Text>
-                  <Text style={{ fontSize: 10, color: "#888780" }}>avg/litter</Text>
+                <View style={s.rankScore}>
+                  <Text style={[s.rankScoreVal, { color: rColor }]}>{sow.avg_live_piglets}</Text>
+                  <Text style={s.rankScoreLabel}>avg/litter</Text>
                 </View>
               </View>
             );
           })}
         </View>
       )}
+
+      {/* Full pig table */}
+      <View style={s.card}>
+        <Text style={s.cardTitle}>All Pigs Overview</Text>
+        <View style={s.tableHeader}>
+          <Text style={[s.th, { flex: 2 }]}>Name</Text>
+          <Text style={s.th}>Stage</Text>
+          <Text style={s.th}>Weight</Text>
+          <Text style={s.th}>Status</Text>
+        </View>
+        {pigs.map(p => {
+          const statusColor = p.health_status === "healthy" ? COLORS.healthy : p.health_status === "critical" ? COLORS.danger : COLORS.warning;
+          return (
+            <View key={p.id} style={s.tableRow}>
+              <View style={[{ flex: 2 }, { flexDirection: "row", alignItems: "center", gap: 6 }]}>
+                <Text style={{ fontSize: 14 }}>🐷</Text>
+                <Text style={[s.td, { fontWeight: "700" }]} numberOfLines={1}>{p.name}</Text>
+              </View>
+              <Text style={s.td}>{p.growth_stage?.slice(0,4)}.</Text>
+              <Text style={[s.td, { fontWeight: "600" }]}>{p.latest_weight ? p.latest_weight+"kg" : "—"}</Text>
+              <View style={[s.statusDot2, { backgroundColor: statusColor }]} />
+            </View>
+          );
+        })}
+      </View>
     </ScrollView>
   );
 }
- 
-function StatCard({ label, value }) {
+
+function KpiCard({ icon, label, value, color, bg }) {
   return (
-    <View style={styles.statCard}>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
+    <View style={[s.kpiCard, { backgroundColor: bg }]}>
+      <Text style={{ fontSize: 20, marginBottom: 4 }}>{icon}</Text>
+      <Text style={[s.kpiValue, { color }]}>{value}</Text>
+      <Text style={s.kpiLabel}>{label}</Text>
     </View>
   );
 }
- 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#F8F7F2" },
-  metricRow: { flexDirection: "row", gap: 10 },
-  statCard: { flex: 1, backgroundColor: "#fff", borderRadius: 12, padding: 14, alignItems: "center", borderWidth: 0.5, borderColor: "#D3D1C7" },
-  statValue: { fontSize: 22, fontWeight: "700", color: "#1D9E75" },
-  statLabel: { fontSize: 11, color: "#888780", marginTop: 2 },
-  card: { backgroundColor: "#fff", borderRadius: 14, padding: 16, borderWidth: 0.5, borderColor: "#D3D1C7" },
-  cardTitle: { fontSize: 14, fontWeight: "700", color: "#2C2C2A", marginBottom: 12 },
-  legendRow: { flexDirection: "row", gap: 16, marginTop: 10, justifyContent: "center" },
-  legendItem: { flexDirection: "row", alignItems: "center", gap: 5 },
-  legendDot: { width: 10, height: 10, borderRadius: 2 },
-  legendText: { fontSize: 12, color: "#5F5E5A" },
-  genderRow: { flexDirection: "row", gap: 12 },
-  genderCard: { flex: 1, padding: 14, backgroundColor: "#F8F7F2", borderRadius: 10 },
-  genderValue: { fontSize: 28, fontWeight: "700" },
-  genderLabel: { fontSize: 13, color: "#5F5E5A", marginTop: 2 },
-  genderPct: { fontSize: 12, color: "#888780" },
-  genderBar: { height: 6, backgroundColor: "#D3D1C7", borderRadius: 3, marginTop: 8, overflow: "hidden" },
-  genderFill: { height: 6, borderRadius: 3 },
-  tableHeader: { flexDirection: "row", paddingVertical: 6, borderBottomWidth: 0.5, borderBottomColor: "#D3D1C7", marginBottom: 4 },
-  tableRow: { flexDirection: "row", paddingVertical: 8, borderBottomWidth: 0.5, borderBottomColor: "#F0EFE8" },
-  th: { flex: 1, fontSize: 11, fontWeight: "700", color: "#888780", textTransform: "uppercase" },
-  td: { flex: 1, fontSize: 12, color: "#2C2C2A", textTransform: "capitalize" },
+
+function GenderCard({ icon, label, value, total, color, bg }) {
+  const pct = total > 0 ? Math.round((value / total) * 100) : 0;
+  return (
+    <View style={[s.genderCard, { backgroundColor: bg }]}>
+      <Text style={[s.genderIcon, { color }]}>{icon}</Text>
+      <Text style={[s.genderValue, { color }]}>{value}</Text>
+      <Text style={s.genderLabel}>{label}</Text>
+      <Text style={s.genderPct}>{pct}%</Text>
+      <View style={s.genderBarBg}>
+        <View style={[s.genderBarFill, { width: pct + "%", backgroundColor: color }]} />
+      </View>
+    </View>
+  );
+}
+
+const s = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: COLORS.screenBg },
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+
+  periodRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  pageTitle: { fontSize: 22, fontWeight: "800", color: COLORS.textPrimary },
+  periodBtn: { backgroundColor: COLORS.white, borderRadius: RADIUS.full, paddingHorizontal: 12, paddingVertical: 6, borderWidth: 1, borderColor: COLORS.border },
+  periodBtnText: { fontSize: 13, color: COLORS.textSecondary, fontWeight: "500" },
+
+  kpiGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  kpiCard: { width: "47%", borderRadius: RADIUS.xl, padding: 14, ...SHADOW.sm },
+  kpiValue:{ fontSize: 24, fontWeight: "800" },
+  kpiLabel:{ fontSize: 12, color: COLORS.textMuted, marginTop: 2 },
+
+  card:    { backgroundColor: COLORS.white, borderRadius: RADIUS.xl, padding: 16, ...SHADOW.sm },
+  cardTitle:{ fontSize: 15, fontWeight: "700", color: COLORS.textPrimary, marginBottom: 4 },
+  cardSub: { fontSize: 12, color: COLORS.textMuted, marginBottom: 12 },
+
+  // Health donut
+  healthBreakdown: { flexDirection: "row", alignItems: "center", gap: 20, marginTop: 12 },
+  donutWrap: { width: 110, height: 110, justifyContent: "center", alignItems: "center" },
+  donut:     { width: 80, height: 80, borderRadius: 40, backgroundColor: COLORS.screenBg, justifyContent: "center", alignItems: "center", borderWidth: 12, borderColor: COLORS.healthy },
+  donutTotal:{ fontSize: 22, fontWeight: "800", color: COLORS.textPrimary },
+  donutLabel:{ fontSize: 10, color: COLORS.textMuted },
+  donutRing: { position: "absolute", width: 100, height: 100, borderRadius: 50, borderWidth: 2, borderColor: "transparent" },
+  healthLegend: { flex: 1, gap: 8 },
+  legendRow:    { flexDirection: "row", alignItems: "center", gap: 6 },
+  legendDot:    { width: 10, height: 10, borderRadius: 5 },
+  legendLabel:  { flex: 1, fontSize: 12, color: COLORS.textPrimary },
+  legendCount:  { fontSize: 12, color: COLORS.textMuted },
+  legendPct:    { fontSize: 13, fontWeight: "700", minWidth: 36, textAlign: "right" },
+
+  // Bar chart
+  barChart: { flexDirection: "row", gap: 8, height: 140, alignItems: "flex-end", marginTop: 12 },
+  barCol:   { flex: 1, alignItems: "center", height: "100%" },
+  barVal:   { fontSize: 11, fontWeight: "700", color: COLORS.textSecondary, marginBottom: 4 },
+  barBg:    { flex: 1, width: "80%", backgroundColor: COLORS.borderLight, borderRadius: 6, justifyContent: "flex-end", overflow: "hidden" },
+  barFill:  { width: "100%", borderRadius: 6 },
+  barLabel: { fontSize: 9, marginTop: 5, fontWeight: "600", textAlign: "center" },
+
+  // Gender
+  genderRow:    { flexDirection: "row", gap: 12, marginTop: 8 },
+  genderCard:   { flex: 1, borderRadius: RADIUS.xl, padding: 16 },
+  genderIcon:   { fontSize: 28, fontWeight: "800", marginBottom: 4 },
+  genderValue:  { fontSize: 28, fontWeight: "800" },
+  genderLabel:  { fontSize: 12, color: COLORS.textSecondary, marginTop: 2 },
+  genderPct:    { fontSize: 12, color: COLORS.textMuted },
+  genderBarBg:  { height: 4, backgroundColor: "rgba(0,0,0,0.1)", borderRadius: 2, marginTop: 8, overflow: "hidden" },
+  genderBarFill:{ height: 4, borderRadius: 2 },
+
+  // Sow ranking
+  rankRow:    { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.borderLight },
+  rankMedal:  { fontSize: 20, width: 28 },
+  rankAvatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.primaryLight, justifyContent: "center", alignItems: "center" },
+  rankName:   { fontSize: 14, fontWeight: "700", color: COLORS.textPrimary },
+  ratingBadge:{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: RADIUS.full },
+  ratingText: { fontSize: 10, fontWeight: "700" },
+  rankDetail: { fontSize: 11, color: COLORS.textMuted, marginTop: 2 },
+  rankScore:  { alignItems: "center" },
+  rankScoreVal:{ fontSize: 18, fontWeight: "800" },
+  rankScoreLabel:{ fontSize: 9, color: COLORS.textMuted },
+
+  // Table
+  tableHeader: { flexDirection: "row", paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: COLORS.border, marginBottom: 4 },
+  tableRow:    { flexDirection: "row", alignItems: "center", paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: COLORS.borderLight },
+  th:          { flex: 1, fontSize: 11, fontWeight: "700", color: COLORS.textMuted, textTransform: "uppercase" },
+  td:          { flex: 1, fontSize: 12, color: COLORS.textPrimary },
+  statusDot2:  { width: 10, height: 10, borderRadius: 5 },
 });
