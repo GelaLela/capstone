@@ -1388,25 +1388,21 @@ class AdminStatsViewSet(viewsets.ViewSet):
         cold_stress_farms    = 0
         critical_farms_wx    = 0
         try:
-            from .services.weather import get_weather_data
-            from .services.weather_intelligence import evaluate_stage_risk, STATUS_RANK
+            from .weather import get_weather_data
             wdata   = get_weather_data()
             curr    = wdata.get("current", {})
             temp_c  = float(curr.get("temperature_2m",       25.0))
-            hum_pct = float(curr.get("relative_humidity_2m", 70.0))
             for farm in farmer_farms:
-                worst = "comfortable"
-                worst_type = "normal"
-                for pig in farm.pigs.exclude(health_status="deceased")[:5]:
-                    r = evaluate_stage_risk(pig.growth_stage, temp_c, hum_pct)
-                    if STATUS_RANK.get(r["status"], 0) > STATUS_RANK.get(worst, 0):
-                        worst      = r["status"]
-                        worst_type = r["type"]
-                if worst in ("warning", "high_risk", "critical"):
-                    if worst_type == "heat":
-                        heat_stress_farms += 1
-                    else:
-                        cold_stress_farms += 1
+                worst = "normal"
+                if temp_c >= 32:
+                    heat_stress_farms += 1
+                    worst = "critical"
+                elif temp_c >= 28:
+                    heat_stress_farms += 1
+                    worst = "warning"
+                elif temp_c < 18:
+                    cold_stress_farms += 1
+                    worst = "warning"
                 if worst == "critical":
                     critical_farms_wx += 1
         except Exception:

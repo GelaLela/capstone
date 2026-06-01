@@ -121,7 +121,7 @@ export default function AnalyticsScreen() {
                 <SCard>
                   <Row>
                     <Col>
-                      <Text style={s.bigNum(color)}>{score}%</Text>
+                      <Text style={bigNumStyle(color)}>{score}%</Text>
                       <Text style={[s.bigLabel, { color }]}>{grade}</Text>
                     </Col>
                     <Col flex={2}>
@@ -167,7 +167,7 @@ export default function AnalyticsScreen() {
               <SCard>
                 <Text style={s.cardTitle}>Average Recovery Duration</Text>
                 <Row>
-                  <Text style={s.bigNum(COLORS.blue)}>{health.avg_recovery_days}</Text>
+                  <Text style={bigNumStyle(COLORS.blue)}>{health.avg_recovery_days}</Text>
                   <Col flex={2} style={{ marginLeft: 12 }}>
                     <Text style={s.cardTitle}>days to recover</Text>
                     <Text style={s.sub}>Based on resolved disease records. Lower is better.</Text>
@@ -216,7 +216,7 @@ export default function AnalyticsScreen() {
                 <SCard>
                   <Text style={s.cardTitle}>Farm Health Score</Text>
                   <Row style={{ marginTop: 10 }}>
-                    <Text style={s.bigNum(color)}>{score}%</Text>
+                    <Text style={bigNumStyle(color)}>{score}%</Text>
                     <Col flex={2} style={{ marginLeft: 12 }}>
                       <ProgBar value={score} max={100} color={color} />
                       <Row style={{ marginTop: 6, gap: 12 }}>
@@ -434,7 +434,7 @@ export default function AnalyticsScreen() {
               <SCard>
                 <Text style={s.cardTitle}>Feed Conversion Ratio (FCR)</Text>
                 <Row style={{ marginTop: 8 }}>
-                  <Text style={s.bigNum(feed.feed_conversion_ratio <= feed.fcr_benchmark ? COLORS.healthy : COLORS.warning)}>
+                  <Text style={bigNumStyle(feed.feed_conversion_ratio <= feed.fcr_benchmark ? COLORS.healthy : COLORS.warning)}>
                     {feed.feed_conversion_ratio}
                   </Text>
                   <Col flex={2} style={{ marginLeft: 12 }}>
@@ -450,7 +450,7 @@ export default function AnalyticsScreen() {
             {feed.total_monthly_cost > 0 && (
               <SCard>
                 <Text style={s.cardTitle}>Estimated Monthly Feed Cost</Text>
-                <Text style={[s.bigNum(COLORS.amber), { marginTop: 6 }]}>₱{feed.total_monthly_cost}</Text>
+                <Text style={[bigNumStyle(COLORS.amber), { marginTop: 6 }]}>₱{feed.total_monthly_cost}</Text>
               </SCard>
             )}
           </>
@@ -486,7 +486,7 @@ export default function AnalyticsScreen() {
                     <SCard borderColor={cardColor}>
                       <Row>
                         <Col>
-                          <Text style={s.bigNum(cardColor)}>{weather.temperature_c}°C</Text>
+                          <Text style={bigNumStyle(cardColor)}>{weather.temperature_c}°C</Text>
                           <Text style={[s.sub, { color: cardColor }]}>{comfort?.overall_label || "Comfortable"}</Text>
                         </Col>
                         <Col flex={2} style={{ marginLeft: 12 }}>
@@ -607,7 +607,14 @@ export default function AnalyticsScreen() {
   );
 }
 
-// ── Chart primitives ──────────────────────────────────────────────────────────
+// ── bigNum helper — NOT inside StyleSheet.create (functions not allowed there) ──
+// StyleSheet.create() only accepts plain style objects. Using a function inside
+// StyleSheet.create() causes it to be silently set to undefined, then calling
+// bigNumStyle(color) throws:  "Property 't'/'a' doesn't exist"  in Hermes engine.
+// Fix: define bigNum as a plain JS function OUTSIDE StyleSheet.create().
+function bigNumStyle(color) {
+  return { fontSize: 38, fontWeight: "800", color };
+}
 
 function BarCh({ data, labelKey, valueKey, color }) {
   if (!data?.length) return null;
@@ -804,6 +811,5 @@ const s = StyleSheet.create({
   baselineText:   { flex: 1, fontSize: 11, color: COLORS.primary, lineHeight: 16, fontWeight: "500" },
 
   alertBanner: { borderRadius: RADIUS.md, padding: 8, marginTop: 6 },
-  bigNum: (color) => ({ fontSize: 38, fontWeight: "800", color }),
   bigLabel: { fontSize: 13, fontWeight: "700" },
 });

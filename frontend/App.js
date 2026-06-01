@@ -1,13 +1,4 @@
-/**
- * frontend/App.js
- *
- * Fixes applied:
- *  - All emoji tab icons replaced with PNG via Icon component
- *  - tintColor removed from tab icons — PNGs are already colored
- *  - Active state uses opacity (1.0) vs inactive (0.4), no color transforms
- *  - FarmOnboardingScreen added to DashStack
- *  - Loading spinner uses PNG pig icon instead of emoji
- */
+
 import React, { useEffect } from "react";
 import {
   ActivityIndicator, View, Text, BackHandler, Alert, Image,
@@ -53,6 +44,7 @@ const HEADER = {
 // ── Tab icon component ────────────────────────────────────────────────────────
 // PNG icons are already colored — use opacity only for active/inactive states.
 // Never apply tintColor to colored PNG assets.
+
 function TabIcon({ source, focused }) {
   return (
     <Image
@@ -320,6 +312,7 @@ function AdminNavigator() {
 function RootNavigator() {
   const { token, isAdmin, checking } = useAuth();
   const [showRegister, setShowRegister] = React.useState(false);
+
 
   // Bug 2 fix: when the token is cleared (logout), always reset to LoginScreen.
   // Without this, showRegister stays true from a previous registration session

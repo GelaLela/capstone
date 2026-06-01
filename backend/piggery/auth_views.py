@@ -1,14 +1,21 @@
 """
-backend/piggery/auth_views.py — complete replacement
+backend/piggery/auth_views.py
 
-Fixes applied:
-  Issue 2: register_view always creates a Farm regardless of role
-  Issue 4: role is hardcoded to "farmer" — removed from client input
-  Issue 5: django_login() called on success so user.last_login is updated
+Registration architecture:
+  1. All three records (User, UserProfile, Farm) are created inside
+     transaction.atomic() — if any step fails, ALL are rolled back.
+     No orphaned User without a Farm can ever exist after this point.
+
+  2. The post_save signal on User creates UserProfile automatically,
+     so get_or_create_profile() is a safe idempotent call.
+
+  3. Farm is ALWAYS created. No role check. Every registered account
+     gets a Farm immediately so pig/feed endpoints work on first login.
 """
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
-from django.contrib.auth import login as django_login   # ← Issue 5 fix
+from django.contrib.auth import login as django_login
+from django.db import transaction
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -67,13 +74,21 @@ def login_view(request):
             status=400
         )
 
-    # ── Issue 5 fix: call django_login() so user.last_login is updated ────────
+    # Update last_login
     django_login(request, user)
 
-    profile  = get_or_create_profile(user)
-    farm     = Farm.objects.filter(owner=user).first()
-    token, _ = Token.objects.get_or_create(user=user)
+    # Safety net: if this user somehow has no farm, create one now
+    # This handles accounts created before the fix was applied
+    profile = get_or_create_profile(user)
+    farm    = Farm.objects.filter(owner=user).first()
+    if not farm and not (user.is_staff or user.is_superuser):
+        farm = Farm.objects.create(
+            owner=user,
+            name=f"{user.first_name or user.username}'s Farm",
+            location="Concepcion, Tarlac",
+        )
 
+    token, _ = Token.objects.get_or_create(user=user)
     _log(user, "login", f"User '{user.username}' signed in successfully.", request)
 
     return Response({
@@ -91,8 +106,8 @@ def register_view(request):
     """
     Register a new farmer account.
 
-    Issue 2 fix: Farm is ALWAYS created regardless of role.
-    Issue 4 fix: Role is hardcoded to "farmer" — client no longer controls it.
+    Uses transaction.atomic() so User + UserProfile + Farm are ALL
+    created together or ALL rolled back. No partial state is possible.
     """
     full_name = request.data.get("full_name", "").strip()
     username  = request.data.get("username",  "").strip()
@@ -112,35 +127,40 @@ def register_view(request):
     if len(password) < 6:
         return Response({"error": "Password must be at least 6 characters long."}, status=400)
     if User.objects.filter(username=username).exists():
-        return Response({"error": "That username is already taken. Please choose a different one."}, status=400)
+        return Response(
+            {"error": "That username is already taken. Please choose a different one."},
+            status=400
+        )
 
     parts = full_name.split(" ", 1)
     first = parts[0]
     last  = parts[1] if len(parts) > 1 else ""
 
-    user = User.objects.create_user(
-        username=username,
-        password=password,
-        first_name=first,
-        last_name=last,
-    )
+    # ── Everything inside atomic() — all-or-nothing ────────────────────────
+    with transaction.atomic():
+        user = User.objects.create_user(
+            username=username,
+            password=password,
+            first_name=first,
+            last_name=last,
+        )
+        # post_save signal will have already created a bare UserProfile.
+        # We fetch it and update with the registration data.
+        profile              = get_or_create_profile(user)
+        profile.phone_number = phone
+        profile.role         = "farmer"
+        profile.farm_type    = "solo"
+        profile.save()
 
-    # Profile — role is always "farmer", set by the system not the user
-    profile              = get_or_create_profile(user)
-    profile.phone_number = phone
-    profile.role         = "farmer"   # ← Issue 4 fix: hardcoded
-    profile.farm_type    = "solo"     # ← default
-    profile.save()
+        # Farm is ALWAYS created here — never conditional
+        name = farm_name or f"{full_name}'s Farm"
+        farm = Farm.objects.create(
+            owner=user,
+            name=name,
+            location="Concepcion, Tarlac",
+        )
 
-    # Farm — ALWAYS created so pig/feed/inventory endpoints never get a missing farm
-    name = farm_name or f"{full_name}'s Farm"
-    farm = Farm.objects.create(
-        owner=user,
-        name=name,
-        location="Concepcion, Tarlac",
-    )
-
-    token, _ = Token.objects.get_or_create(user=user)
+        token, _ = Token.objects.get_or_create(user=user)
 
     _log(user, "create", f"New farmer account registered: '{username}'.", request)
 
@@ -157,7 +177,6 @@ def register_view(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def logout_view(request):
-    """Delete the user's token and create an audit log entry."""
     user = request.user
     _log(user, "logout", f"User '{user.username}' signed out.", request)
     try:
@@ -165,3 +184,34 @@ def logout_view(request):
     except Exception:
         pass
     return Response({"message": "Logged out successfully."})
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def me_view(request):
+    """
+    GET /api/auth/me/
+
+    Token validation endpoint used by AuthContext on cold start.
+    Returns 200 if the token is valid, 401 if expired/invalid (handled by DRF).
+    Returns minimal user data to allow AuthContext to refresh state if needed.
+    """
+    user = request.user
+    try:
+        is_admin = user.profile.role == "admin" or user.is_staff or user.is_superuser
+    except Exception:
+        is_admin = user.is_staff or user.is_superuser
+
+    farm = None
+    try:
+        from .models import Farm
+        farm = Farm.objects.filter(owner=user).first()
+    except Exception:
+        pass
+
+    return Response({
+        "id":       user.id,
+        "username": user.username,
+        "is_admin": is_admin,
+        "farm_id":  farm.id if farm else None,
+    })

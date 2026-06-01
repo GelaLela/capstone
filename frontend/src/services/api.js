@@ -1,6 +1,14 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+// ── API BASE URL ──────────────────────────────────────────────────────────────
+// LOCAL TESTING (Expo QR code on same WiFi):
+//   Use your machine's local IP. Run `ipconfig` (Windows) or `ifconfig` (Mac/Linux)
+//   to find it. Must be the IP your phone can reach on the same WiFi.
 const BASE_URL = "http://192.168.1.4:8000/api";
+
+// PRODUCTION APK (deployed to pythonanywhere):
+//   Uncomment the line below and comment out the local IP above.
+// const BASE_URL = "https://piglytics.pythonanywhere.com/api";
 
 export function getBaseUrl() { return BASE_URL; }
 
