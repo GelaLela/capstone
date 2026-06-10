@@ -145,14 +145,29 @@ class FarmViewSet(viewsets.ModelViewSet):
         }
         for pig in pigs:
             records = pig.weight_records.order_by("recorded_at")
-            if records.count() < 2:
+            count = records.count()
+            if count == 0:
                 continue
-            first = records.first()
-            last  = records.last()
-            days  = (last.recorded_at - first.recorded_at).days
+
+            last = records.last()
+
+            if count >= 2:
+                # Two or more records: use first vs last weight record
+                first_date   = records.first().recorded_at
+                first_weight = float(records.first().weight_kg)
+            else:
+                # Only one weight record: use date_of_birth as the starting point.
+                # Birth weight for most pigs is approximately 1.5 kg (industry average).
+                # This allows ADG to be calculated and displayed immediately after
+                # the farmer logs the first weight, instead of showing 0 until
+                # a second record is added.
+                first_date   = pig.date_of_birth
+                first_weight = 1.5
+
+            days = (last.recorded_at - first_date).days
             if days == 0:
                 continue
-            adg = float(last.weight_kg - first.weight_kg) / days
+            adg = (float(last.weight_kg) - first_weight) / days
             adg_data.append({"adg": adg, "stage": pig.growth_stage})
 
         avg_adg = round(sum(d["adg"] for d in adg_data) / len(adg_data), 3) if adg_data else 0
@@ -308,26 +323,35 @@ class FarmViewSet(viewsets.ModelViewSet):
         """
         try:
             farm  = self.get_object()
+            # Pass the farm object so get_weather_alert can evaluate
+            # pig comfort per growth stage using the farm's actual pig population.
             alert = get_weather_alert(farm.location, farm=farm)
 
-            # Auto-create weather notifications for warning-level and above
+            # Auto-create weather notifications for heat/cold stress alerts.
+            # FIX: removed is_read=False from the exists() check.
+            # Previous version recreated the notification every time the user
+            # read it, because is_read=False meant "no unread = create again".
+            # Now we check if ANY notification with this title exists today
+            # (read or unread) — if yes, skip. Creates at most once per day.
             pig_comfort = alert.get("pig_comfort")
-            if pig_comfort:
-                for notif_data in pig_comfort.get("notifications", []):
-                    exists = Notification.objects.filter(
+            if pig_comfort and pig_comfort.get("overall_status") != "normal":
+                overall     = pig_comfort.get("overall_label", "Weather Alert")
+                summary     = pig_comfort.get("pig_comfort_summary", "")
+                notif_title = f"Weather: {overall}"
+                exists = Notification.objects.filter(
+                    farm=farm,
+                    notification_type="weather",
+                    title=notif_title,
+                    created_at__date=date.today(),
+                    # No is_read filter — once created today, don't create again
+                ).exists()
+                if not exists:
+                    Notification.objects.create(
                         farm=farm,
                         notification_type="weather",
-                        title=notif_data["title"],
-                        created_at__date=date.today(),
-                        is_read=False,
-                    ).exists()
-                    if not exists:
-                        Notification.objects.create(
-                            farm=farm,
-                            notification_type="weather",
-                            title=notif_data["title"],
-                            message=notif_data["message"],
-                        )
+                        title=notif_title,
+                        message=summary,
+                    )
 
             return Response(alert)
         except Exception:
@@ -396,6 +420,52 @@ class PigViewSet(viewsets.ModelViewSet):
         from .models import PigBaseline, BreedingRecord
 
         pig = self.get_object()
+
+        # Backend validation: existing female breeder pigs must supply breeding history.
+        # Applies only when pig.is_historical=True (registered as an existing pig),
+        # gender=female, and growth_stage=breeder.
+        # total_litters must be present; if > 0, last_farrowing_date is also required.
+        if (
+            pig.is_historical
+            and pig.gender == "female"
+            and pig.growth_stage == "breeder"
+        ):
+            # All four breeding history fields are required for existing female breeder pigs.
+            # Each field is checked individually so the response identifies the exact missing field.
+            total_litters_raw      = request.data.get("total_litters")
+            total_piglets_born_raw = request.data.get("total_piglets_born")
+            total_weaned_raw       = request.data.get("total_piglets_weaned")
+            last_farrowing         = request.data.get("last_farrowing_date")
+
+            if total_litters_raw is None or str(total_litters_raw).strip() == "":
+                return Response(
+                    {"error": "total_litters is required for existing breeder sows (enter 0 if unknown)."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            try:
+                litters_int = int(total_litters_raw)
+            except (ValueError, TypeError):
+                return Response(
+                    {"error": "total_litters must be a whole number."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if total_piglets_born_raw is None or str(total_piglets_born_raw).strip() == "":
+                return Response(
+                    {"error": "total_piglets_born is required for existing breeder sows (enter 0 if unknown)."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if total_weaned_raw is None or str(total_weaned_raw).strip() == "":
+                return Response(
+                    {"error": "total_piglets_weaned is required for existing breeder sows (enter 0 if unknown)."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if not last_farrowing:
+                return Response(
+                    {"error": "last_farrowing_date is required for existing breeder sows."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         baseline, created = PigBaseline.objects.get_or_create(pig=pig)
 
         for field in [
@@ -575,7 +645,43 @@ class VaccinationViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"])
     def schedule(self, request, pig_pk=None):
+        """
+        POST /api/pigs/{pig_pk}/vaccinations/schedule/
+
+        Creates a scheduled vaccination record and a notification.
+
+        Date validation (two layers):
+          1. This view rejects next_due_date in the past before the serializer runs.
+          2. VaccinationRecordSerializer.validate_next_due_date() enforces the same
+             rule — catching any direct API calls that bypass the view-level check.
+        """
         pig = Pig.objects.get(pk=pig_pk)
+
+        # Layer 1: view-level date guard
+        next_due_date_str = request.data.get("next_due_date", "")
+        if next_due_date_str:
+            try:
+                from datetime import datetime
+                next_due_date = datetime.strptime(next_due_date_str, "%Y-%m-%d").date()
+                if next_due_date < date.today():
+                    return Response(
+                        {
+                            "error": (
+                                f"Vaccination date cannot be in the past. "
+                                f"You entered {next_due_date_str}. "
+                                f"Today is {date.today()}. "
+                                f"Please select today or a future date."
+                            )
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+            except ValueError:
+                return Response(
+                    {"error": "Invalid date format. Use YYYY-MM-DD (e.g. 2026-07-15)."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        # Layer 2: serializer validation (also enforces the date rule)
         serializer = VaccinationRecordSerializer(data=request.data)
         if serializer.is_valid():
             record = serializer.save(pig=pig)
@@ -648,30 +754,42 @@ class BreedingViewSet(viewsets.ModelViewSet):
         """
         GET /api/breeding/eligible_sows/
 
-        Returns female pigs eligible for breeding selection.
-        Includes: breeder sows, replacement gilts, and pregnant sows.
-        Excludes: piglets, weaners, growers, finishers, boars.
+        Returns female pigs eligible for a NEW breeding event.
 
-        Response: [{id, pig_id, name, growth_stage, pregnancy_status, last_bred}]
-        Used by BreedingScreen sow picker dropdown.
+        Excludes sows that are currently:
+          - pregnant  (already confirmed pregnant)
+          - bred      (breeding event recorded, awaiting confirmation)
+
+        These sows should not appear in the breeding selection picker at all —
+        not just shown with a warning. A sow with an active pregnancy cannot
+        be bred again until she has farrowed and weaned.
         """
         farm = get_user_farm(request.user)
         if not farm:
             return Response([])
 
-        # Eligible stages: breeder sows + finisher-stage females that are gilts
         eligible = Pig.objects.filter(
             farm=farm,
             gender="female",
             growth_stage__in=["finisher", "breeder"],
         ).exclude(health_status="deceased").order_by("name")
 
-        # Get most recent breeding status per sow
+        # Get the most recent breeding status for each sow
+        # and exclude any that are currently bred or pregnant
         result = []
         for pig in eligible:
             last_record = BreedingRecord.objects.filter(
                 sow=pig
             ).order_by("-breeding_date").first()
+
+            current_status = last_record.pregnancy_status if last_record else "open"
+
+            # Exclude sows that are already in an active breeding cycle.
+            # 'bred' = breeding recorded, not yet confirmed pregnant.
+            # 'pregnant' = confirmed pregnant, must not be bred again.
+            # These sows will reappear after farrowing.
+            if current_status in ("bred", "pregnant"):
+                continue
 
             result.append({
                 "id":                pig.id,
@@ -681,7 +799,7 @@ class BreedingViewSet(viewsets.ModelViewSet):
                 "breed":             pig.breed,
                 "age_in_months":     pig.age_in_months,
                 "latest_weight":     pig.latest_weight,
-                "current_status":    last_record.pregnancy_status if last_record else "open",
+                "current_status":    current_status,
                 "last_bred":         str(last_record.breeding_date) if last_record else None,
                 "expected_farrowing":str(last_record.expected_farrowing_date) if last_record and last_record.expected_farrowing_date else None,
                 "display_label":     f"{pig.pig_id} — {pig.name}",
@@ -714,7 +832,12 @@ class BreedingViewSet(viewsets.ModelViewSet):
             days_remaining = 114 - days_pregnant
             gestation_pct  = round((days_pregnant / 114) * 100, 1)
 
-            if days_pregnant <= 7:
+            # gestation_stage is based on both days_pregnant AND pregnancy_status.
+            # A sow with pregnancy_status='pregnant' has been CONFIRMED pregnant —
+            # she must never show "awaiting confirmation" regardless of days since breeding.
+            # The old code used only days_pregnant, so a sow confirmed pregnant on
+            # the same day as breeding (days_pregnant=0) still showed "Newly bred".
+            if record.pregnancy_status == "bred" and days_pregnant <= 7:
                 stage = "Newly bred — awaiting pregnancy confirmation"
             elif days_pregnant <= 30:
                 stage = "Early gestation (embryo attachment)"
@@ -759,6 +882,23 @@ class BreedingViewSet(viewsets.ModelViewSet):
             if record.sow.id in seen_sows:
                 continue
             seen_sows.add(record.sow.id)
+
+            # FIX: skip this sow if she already has a more recent breeding record.
+            # Without this check, a sow appears as "Ready to Breed" forever after
+            # farrowing, even after the farmer has already added a new breeding event.
+            # The recently_farrowed query only fetches 'farrowed' records — it never
+            # sees the new 'bred' or 'pregnant' record created after farrowing.
+            # This check looks for any BreedingRecord for this sow with a breeding_date
+            # AFTER the actual_farrowing_date of the current record. If one exists,
+            # the sow has already been re-bred and must not appear as ready.
+            already_re_bred = BreedingRecord.objects.filter(
+                sow=record.sow,
+                breeding_date__gt=record.actual_farrowing_date,
+                pregnancy_status__in=["bred", "pregnant"],
+            ).exists()
+            if already_re_bred:
+                continue
+
             weaning_date = record.actual_farrowing_date + timedelta(days=DAYS_TO_WEANING)
             estrus_date  = weaning_date + timedelta(days=DAYS_WEANING_TO_ESTRUS)
             days_until   = (estrus_date - today).days
@@ -780,14 +920,24 @@ class BreedingViewSet(viewsets.ModelViewSet):
         adg_data = []
         for pig in farm.pigs.exclude(health_status="deceased"):
             records = pig.weight_records.order_by("recorded_at")
-            if records.count() < 2:
+            count = records.count()
+            if count == 0:
                 continue
-            first = records.first()
-            last  = records.last()
-            days  = (last.recorded_at - first.recorded_at).days
+
+            last = records.last()
+
+            if count >= 2:
+                first_date   = records.first().recorded_at
+                first_weight = float(records.first().weight_kg)
+            else:
+                # Single record: use date_of_birth and approximate birth weight
+                first_date   = pig.date_of_birth
+                first_weight = 1.5
+
+            days = (last.recorded_at - first_date).days
             if days == 0:
                 continue
-            adg       = round(float(last.weight_kg - first.weight_kg) / days, 3)
+            adg       = round((float(last.weight_kg) - first_weight) / days, 3)
             benchmark = ADG_BENCHMARKS.get(pig.growth_stage, 0.5)
             perf      = round((adg / benchmark) * 100, 1)
             adg_data.append({

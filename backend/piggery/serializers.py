@@ -28,6 +28,28 @@ class VaccinationRecordSerializer(serializers.ModelSerializer):
         model  = VaccinationRecord
         fields = ["id", "vaccine_name", "date_given", "next_due_date", "administered_by", "notes"]
 
+    def validate_next_due_date(self, value):
+        """
+        Reject any next_due_date that is in the past.
+
+        This runs at the serializer layer — before any data reaches the database.
+        It is the authoritative backend guard for Problem 2 and 3:
+          - Past dates (e.g. 2024-03-01 when today is 2026-06-10) → rejected
+          - Previous-year dates (e.g. 2025-xx-xx when today is 2026) → rejected
+          - Today's date → allowed (scheduling for today is valid)
+          - Future dates → allowed
+
+        This check cannot be bypassed by a modified frontend or a direct API call.
+        """
+        from datetime import date
+        if value is not None and value < date.today():
+            raise serializers.ValidationError(
+                f"Vaccination date cannot be in the past. "
+                f"You entered {value}. Today is {date.today()}. "
+                f"Please select today or a future date."
+            )
+        return value
+
 
 class DiseaseRecordSerializer(serializers.ModelSerializer):
     class Meta:
@@ -90,7 +112,21 @@ class PigListSerializer(serializers.ModelSerializer):
             "id", "name", "pig_id", "date_of_birth", "age_in_months",
             "gender", "breed", "growth_stage", "health_status",
             "last_checkup_date", "latest_weight",
+            # is_historical must be included so api.createPig({ is_historical: true })
+            # is actually received and stored. Without this the field exists on the
+            # model but the serializer silently drops it from every POST request.
+            "is_historical",
         ]
+
+    def validate(self, data):
+        gender       = data.get("gender",       getattr(self.instance, "gender",       None))
+        growth_stage = data.get("growth_stage", getattr(self.instance, "growth_stage", None))
+        if gender == "male" and growth_stage == "breeder":
+            raise serializers.ValidationError(
+                {"growth_stage": "Male pigs cannot have the Breeder growth stage. "
+                                 "Breeder is reserved for sows (female pigs) used for reproduction."}
+            )
+        return data
 
 
 class PigDetailSerializer(serializers.ModelSerializer):

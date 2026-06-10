@@ -85,7 +85,7 @@ def login_view(request):
         farm = Farm.objects.create(
             owner=user,
             name=f"{user.first_name or user.username}'s Farm",
-            location="Concepcion, Tarlac",
+            location="Concepcion, Pinagbakuran",
         )
 
     token, _ = Token.objects.get_or_create(user=user)
@@ -157,7 +157,7 @@ def register_view(request):
         farm = Farm.objects.create(
             owner=user,
             name=name,
-            location="Concepcion, Tarlac",
+            location="Concepcion, Pinagbakuran",
         )
 
         token, _ = Token.objects.get_or_create(user=user)
