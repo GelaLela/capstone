@@ -1,3 +1,23 @@
+/**
+ * frontend/src/screens/AuditLogScreen.js
+ *
+ * Issue 3 fix — Export PDF/Excel/CSV:
+ *
+ * BEFORE (broken):
+ *   Linking.openURL(url) opens the export URL in the browser.
+ *   The browser has no Authorization header, so the endpoint returns 401.
+ *   Even if the endpoint were public, opening a local IP in a mobile
+ *   browser from a different device often fails silently.
+ *
+ * AFTER (fixed):
+ *   We fetch the file in-app using the auth token (same as all other API calls),
+ *   write it to the device's cache directory using expo-file-system,
+ *   then open the system share sheet using expo-sharing.
+ *   This works on both Android and iOS and keeps the auth token in use.
+ *
+ * Install required (run once):
+ *   npx expo install expo-file-system expo-sharing
+ */
 import React, { useState, useCallback } from "react";
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
@@ -5,22 +25,27 @@ import {
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import * as FileSystem from "expo-file-system/legacy";
+// expo-file-system/legacy is required for Expo SDK 54+.
+// downloadAsync was moved to the legacy namespace.
+// Using the non-legacy import causes TypeError on APK builds.
 import * as Sharing from "expo-sharing";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { api } from "../services/api";
+import { api, getBaseUrl } from "../services/api";
 import { COLORS, RADIUS, SHADOW } from "../theme";
 
-const BASE_URL = "http://192.168.1.4:8000/api";
+// Use the same BASE_URL as the rest of the app.
+// Previously hardcoded to 192.168.1.4 — broke exports in APK outside dev network.
+const BASE_URL = getBaseUrl();
 
 const ICONS = {
-  create:   require("../assets/icons/add.png"),  
-  update:   require("../assets/icons/edit.png"),   
-  delete:   require("../assets/icons/trash.png"),      
-  login:    require("../assets/icons/login.png"),        
+  create:   require("../assets/icons/analytics.png"),   // TODO: Replace with add.png
+  update:   require("../assets/icons/analytics.png"),   // TODO: Replace with edit.png
+  delete:   require("../assets/icons/logout.png"),       // TODO: Replace with trash.png
+  login:    require("../assets/icons/user.png"),         // TODO: Replace with login.png
   logout:   require("../assets/icons/logout.png"),
   audit:    require("../assets/icons/audit.png"),
-  search:   require("../assets/icons/search.png"),   
-  filter:   require("../assets/icons/filter.png"), 
+  search:   require("../assets/icons/analytics.png"),   // TODO: Replace with search.png
+  filter:   require("../assets/icons/inventory.png"),   // TODO: Replace with filter.png
   analytics:require("../assets/icons/analytics.png"),
   forecast: require("../assets/icons/forecast.png"),
 };
@@ -124,7 +149,14 @@ export default function AuditLogScreen() {
       });
 
       if (result.status !== 200) {
-        Alert.alert("Export Failed", "The server could not generate the report. Please try again.");
+        Alert.alert("Export Failed", `Server error ${result.status}. Please try again.`);
+        return;
+      }
+
+      // Validate the file was actually written and is not empty
+      const fileInfo = await FileSystem.getInfoAsync(fileUri);
+      if (!fileInfo.exists || fileInfo.size === 0) {
+        Alert.alert("Export Failed", "The file could not be saved. Please try again.");
         return;
       }
 
@@ -276,7 +308,10 @@ export default function AuditLogScreen() {
                 activeOpacity={0.85}>
                 <View style={s.logCardHeader}>
                   <View style={[s.actionIconWrap, { backgroundColor: cfg.bg }]}>
-                    <Text style={{ fontSize: 18 }}>{cfg.icon}</Text>
+                    <Image
+                      source={ICONS[cfg.iconKey] || ICONS.audit}
+                      style={{ width: 20, height: 20, resizeMode: "contain" }}
+                    />
                   </View>
                   <View style={{ flex: 1 }}>
                     <View style={s.logTopRow}>

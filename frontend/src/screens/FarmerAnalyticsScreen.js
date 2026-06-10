@@ -7,12 +7,12 @@
  * Charts are built with pure React Native Views (no external chart library needed).
  * This avoids compatibility issues with Expo.
  */
-import React, { useState, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
   ActivityIndicator, Alert, Image,
 } from "react-native";
-import { useFocusEffect } from "@react-navigation/native";
+import { useNavigation } from "@react-navigation/native";
 import { api } from "../services/api";
 import { COLORS, RADIUS, SHADOW } from "../theme";
 
@@ -35,14 +35,18 @@ const ICONS = {
 };
 
 export default function FarmerAnalyticsScreen({ route }) {
-  const { farmer } = route.params;
+  // Safe param access — route.params is undefined when screen first mounts
+  // in the stack before any navigation. Destructuring undefined crashes on APK.
+  const farmer = route?.params?.farmer;
+
   const [data,    setData]    = useState(null);
   const [loading, setLoading] = useState(true);
-  const [tab,     setTab]     = useState("pigs"); // pigs | health | breeding | feed
+  const [tab,     setTab]     = useState("pigs");
 
-  useFocusEffect(useCallback(() => {
+  useEffect(() => {
+    if (!farmer?.id) return;
     loadAnalytics();
-  }, []));
+  }, [farmer?.id]);
 
   async function loadAnalytics() {
     setLoading(true);
@@ -56,6 +60,15 @@ export default function FarmerAnalyticsScreen({ route }) {
     } finally {
       setLoading(false);
     }
+  }
+
+  // Guard: if no farmer param, show empty state instead of crashing
+  if (!farmer) {
+    return (
+      <View style={s.center}>
+        <Text style={{ color: COLORS.textMuted }}>No farmer selected.</Text>
+      </View>
+    );
   }
 
   if (loading) return (

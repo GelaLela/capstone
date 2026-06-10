@@ -8,18 +8,20 @@ import {
   TouchableOpacity, ActivityIndicator, TextInput, Alert, Image,
 } from "react-native";
 import { api } from "../services/api";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { Platform } from "react-native";
 import { COLORS, RADIUS, SHADOW, STATUS_COLORS, STAGE_COLORS } from "../theme";
 
 const ICONS = {
   pig:       require("../assets/icons/pig.png"),
   health:    require("../assets/icons/pill.png"),
-  weight:    require("../assets/icons/weight.png"),  
+  weight:    require("../assets/icons/analytics.png"),  // TODO: Replace with weight.png
   breeding:  require("../assets/icons/breeding.png"),
   audit:     require("../assets/icons/audit.png"),
   vaccine:   require("../assets/icons/vaccine.png"),
   pill:      require("../assets/icons/pill.png"),
-  logout:    require("../assets/icons/trash.png"),    
-  forecast:  require("../assets/icons/calendar.png"), 
+  logout:    require("../assets/icons/logout.png"),     // trash placeholder
+  forecast:  require("../assets/icons/forecast.png"),  // calendar placeholder
   analytics: require("../assets/icons/analytics.png"),
   pregnant:  require("../assets/icons/pregnant.png"),
 };
@@ -43,6 +45,7 @@ export default function PigDetailScreen({ route, navigation }) {
   const [vaxForm,       setVaxForm]      = useState({ vaccine_name: "", next_due_date: "", administered_by: "" });
   const [vaxErrors,     setVaxErrors]    = useState({});
   const [savingVax,     setSavingVax]    = useState(false);
+  const [showVaxDatePicker, setShowVaxDatePicker] = useState(false);
 
   async function load() {
     try {
@@ -90,8 +93,22 @@ export default function PigDetailScreen({ route, navigation }) {
 
   function validateVax() {
     const e = {};
-    if (!vaxForm.vaccine_name.trim()) e.vaccine_name   = "Vaccine name is required.";
-    if (!vaxForm.next_due_date.trim()) e.next_due_date = "Due date is required.";
+    if (!vaxForm.vaccine_name.trim()) {
+      e.vaccine_name = "Vaccine name is required.";
+    }
+    if (!vaxForm.next_due_date.trim()) {
+      e.next_due_date = "Due date is required.";
+    } else {
+      // Check the date is valid and not in the past
+      const selected = new Date(vaxForm.next_due_date);
+      const today    = new Date();
+      today.setHours(0, 0, 0, 0);   // compare date only, not time
+      if (isNaN(selected.getTime())) {
+        e.next_due_date = "Invalid date. Use the date picker or format YYYY-MM-DD.";
+      } else if (selected < today) {
+        e.next_due_date = `Date cannot be in the past. You selected ${vaxForm.next_due_date}. Please choose today or a future date.`;
+      }
+    }
     setVaxErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -245,7 +262,7 @@ export default function PigDetailScreen({ route, navigation }) {
               <View style={s.modal}>
                 <View style={s.modalHeader}>
                   <Text style={s.modalTitle}>Schedule Vaccination</Text>
-                  <TouchableOpacity onPress={() => { setVaxModal(false); setVaxErrors({}); }}>
+                  <TouchableOpacity onPress={() => { setVaxModal(false); setVaxErrors({}); setShowVaxDatePicker(false); }}>
                     <Text style={s.modalClose}>✕</Text>
                   </TouchableOpacity>
                 </View>
@@ -256,11 +273,37 @@ export default function PigDetailScreen({ route, navigation }) {
                       onChangeText={v => { setVaxForm(f => ({ ...f, vaccine_name: v })); if (vaxErrors.vaccine_name) setVaxErrors(p => ({ ...p, vaccine_name: null })); }}
                       placeholder="e.g. Hog Cholera" placeholderTextColor={COLORS.textMuted} />
                   </ModalField>
-                  <ModalField label="Due date (YYYY-MM-DD)" required error={vaxErrors.next_due_date}>
-                    <TextInput style={[s.modalInput, vaxErrors.next_due_date && s.modalInputError]}
-                      value={vaxForm.next_due_date}
-                      onChangeText={v => { setVaxForm(f => ({ ...f, next_due_date: v })); if (vaxErrors.next_due_date) setVaxErrors(p => ({ ...p, next_due_date: null })); }}
-                      placeholder="e.g. 2025-06-15" placeholderTextColor={COLORS.textMuted} />
+                  <ModalField label="Due date" required error={vaxErrors.next_due_date}>
+                    {/* DateTimePicker replaces the free-text TextInput.
+                        minimumDate={new Date()} prevents selecting any past date.
+                        The user cannot type a date — they only pick from the calendar.
+                        This eliminates Problems 1, 2, and 3 at the UI layer. */}
+                    <TouchableOpacity
+                      style={[s.modalInput, { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+                        vaxErrors.next_due_date && s.modalInputError]}
+                      onPress={() => setShowVaxDatePicker(true)}
+                    >
+                      <Text style={{ fontSize: 14, color: vaxForm.next_due_date ? COLORS.textPrimary : COLORS.textMuted }}>
+                        {vaxForm.next_due_date || "Tap to select a future date"}
+                      </Text>
+                      <Image source={ICONS.forecast} style={{ width: 16, height: 16, resizeMode: "contain", opacity: 0.5 }} />
+                    </TouchableOpacity>
+                    {showVaxDatePicker && (
+                      <DateTimePicker
+                        value={vaxForm.next_due_date ? new Date(vaxForm.next_due_date) : new Date()}
+                        mode="date"
+                        display={Platform.OS === "ios" ? "spinner" : "default"}
+                        minimumDate={new Date()}
+                        onChange={(event, selectedDate) => {
+                          setShowVaxDatePicker(Platform.OS === "ios");
+                          if (selectedDate) {
+                            const iso = selectedDate.toISOString().split("T")[0];
+                            setVaxForm(f => ({ ...f, next_due_date: iso }));
+                            if (vaxErrors.next_due_date) setVaxErrors(p => ({ ...p, next_due_date: null }));
+                          }
+                        }}
+                      />
+                    )}
                   </ModalField>
                   <ModalField label="Veterinarian (optional)">
                     <TextInput style={s.modalInput} value={vaxForm.administered_by}

@@ -67,22 +67,28 @@ export default function AnalyticsScreen() {
   useFocusEffect(useCallback(() => {
     if (!farmId) return;
     setLoading(true);
+    // Load the four analytics tabs first.
+    // Weather is fetched independently so a timeout on PythonAnywhere
+    // never causes the entire Analytics screen to show blank.
     Promise.all([
       api.getHealthAnalytics(farmId),
       api.getGrowthAnalytics(farmId),
       api.getBreedingAnalytics(farmId),
       api.getFeedAnalytics(farmId),
-      api.getWeather(farmId),
     ])
-      .then(([h, gr, br, fd, wx]) => {
+      .then(([h, gr, br, fd]) => {
         setHealth(h);
         setGrowth(gr);
         setBreed(br);
         setFeed(fd);
-        setWeather(wx);
       })
       .catch(e => console.error("Analytics:", e.message))
       .finally(() => setLoading(false));
+
+    // Weather loads independently — tab shows "unavailable" if it fails
+    api.getWeather(farmId)
+      .then(wx => setWeather(wx))
+      .catch(() => setWeather({ temperature_c: null, error: "Weather unavailable" }));
   }, [farmId]));
 
   if (loading) return (

@@ -1,4 +1,3 @@
-
 import React, { useEffect } from "react";
 import {
   ActivityIndicator, View, Text, BackHandler, Alert, Image,
@@ -8,6 +7,8 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { COLORS } from "./src/theme";
 import { AuthProvider, useAuth } from "./src/context/AuthContext";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // ── Auth screens ──────────────────────────────────────────────────────────────
 import LoginScreen    from "./src/screens/LoginScreen";
@@ -44,7 +45,6 @@ const HEADER = {
 // ── Tab icon component ────────────────────────────────────────────────────────
 // PNG icons are already colored — use opacity only for active/inactive states.
 // Never apply tintColor to colored PNG assets.
-
 function TabIcon({ source, focused }) {
   return (
     <Image
@@ -136,6 +136,8 @@ function ForecastStack() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function FarmerNavigator() {
+  // useSafeAreaInsets provides bottom inset for devices with home indicator.
+  const insets = useSafeAreaInsets();
   useEffect(() => {
     const h = BackHandler.addEventListener("hardwareBackPress", () => {
       Alert.alert("Exit Piglytics", "Are you sure you want to exit?", [
@@ -159,9 +161,9 @@ function FarmerNavigator() {
           backgroundColor: COLORS.white,
           borderTopWidth: 1,
           borderTopColor: COLORS.border,
-          paddingBottom: 6,
+          paddingBottom: insets.bottom + 6,
           paddingTop: 4,
-          height: 60,
+          height: 60 + insets.bottom,
         },
         tabBarLabelStyle: { fontSize: 9, fontWeight: "600", marginTop: 1 },
       }}
@@ -218,36 +220,40 @@ function FarmerNavigator() {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ADMIN STACKS
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Bug 1 fix: AdminDashStack no longer contains AuditLog or FarmerAnalytics
+// as stack screens. Pushing those screens inside AdminDashStack caused the
+// Dashboard tab to remain highlighted when viewing Audit Logs, and made the
+// Dashboard tab unresponsive (pressing it did nothing because React Navigation
+// thought you were already on AdminHome).
+//
+// AuditLog is now exclusively owned by AdminAuditStack (the AdminAudit tab).
+// FarmerAnalytics is pushed inside AdminAuditStack so it stays in the correct tab.
+// AdminDashboardScreen navigates to the tab itself: navigation.navigate("AdminAudit").
+
 function AdminDashStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="AdminDashboardMain" component={AdminDashboardScreen} />
+      {/* FarmerAnalyticsScreen lives here — not in AdminAuditStack.
+          AdminDashboardScreen navigates here with the farmer param.
+          Back button returns to AdminDashboardScreen, not AuditLogs. */}
       <Stack.Screen
-        name="AdminDashboardMain"
-        component={AdminDashboardScreen}
-      />
-
-      <Stack.Screen
-        name="FarmerAnalytics"
+        name="FarmerAnalyticsScreen"
         component={FarmerAnalyticsScreen}
-        options={{
-          ...HEADER,
-          headerShown: true,
-          title: "Farmer Analytics",
-        }}
+        options={{ ...HEADER, headerShown: true, title: "Farmer Analytics" }}
       />
     </Stack.Navigator>
   );
 }
 
-
 function AdminAuditStack() {
   return (
     <Stack.Navigator screenOptions={HEADER}>
-      <Stack.Screen
-        name="AuditLogMain"
-        component={AuditLogScreen}
-        options={{ title: "Audit Logs" }}
-      />
+      <Stack.Screen name="AuditLogMain" component={AuditLogScreen} options={{ title: "Audit Logs" }} />
     </Stack.Navigator>
   );
 }
@@ -257,6 +263,14 @@ function AdminAuditStack() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function AdminNavigator() {
+  // FIX: useSafeAreaInsets() was missing from AdminNavigator.
+  // FarmerNavigator had it but AdminNavigator did not.
+  // `insets` was used on two lines inside screenOptions (paddingBottom, height)
+  // while never being declared — a ReferenceError in Hermes.
+  // In APK release mode this crashes silently with no red screen.
+  // Every admin login caused an immediate silent crash.
+  const insets = useSafeAreaInsets();
+
   useEffect(() => {
     const h = BackHandler.addEventListener("hardwareBackPress", () => {
       Alert.alert("Exit Piglytics Admin", "Are you sure you want to exit?", [
@@ -278,9 +292,9 @@ function AdminNavigator() {
           backgroundColor: COLORS.white,
           borderTopWidth: 1,
           borderTopColor: COLORS.border,
-          paddingBottom: 6,
+          paddingBottom: insets.bottom + 6,
           paddingTop: 4,
-          height: 60,
+          height: 60 + insets.bottom,
         },
         tabBarLabelStyle: { fontSize: 9, fontWeight: "600", marginTop: 1 },
       }}
@@ -312,7 +326,6 @@ function AdminNavigator() {
 function RootNavigator() {
   const { token, isAdmin, checking } = useAuth();
   const [showRegister, setShowRegister] = React.useState(false);
-
 
   // Bug 2 fix: when the token is cleared (logout), always reset to LoginScreen.
   // Without this, showRegister stays true from a previous registration session
@@ -358,8 +371,10 @@ function RootNavigator() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <RootNavigator />
-    </AuthProvider>
+    <SafeAreaProvider>
+      <AuthProvider>
+        <RootNavigator />
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }

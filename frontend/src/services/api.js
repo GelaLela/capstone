@@ -2,15 +2,32 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // ── API BASE URL ──────────────────────────────────────────────────────────────
 // LOCAL TESTING (Expo QR code on same WiFi):
-//   Use your machine's local IP. Run `ipconfig` (Windows) or `ifconfig` (Mac/Linux)
-//   to find it. Must be the IP your phone can reach on the same WiFi.
-const BASE_URL = "http://192.168.1.4:8000/api";
+//   Use your machine's local IP. Run `ipconfig` (Windows) to find it.
+// const BASE_URL = "http://192.168.1.4:8000/api";
 
-// PRODUCTION APK (deployed to pythonanywhere):
-//   Uncomment the line below and comment out the local IP above.
-// const BASE_URL = "https://piglytics.pythonanywhere.com/api";
+// PRODUCTION (PythonAnywhere + APK build):
+const BASE_URL = "https://cultural-routine-nape.ngrok-free.dev/api";
 
 export function getBaseUrl() { return BASE_URL; }
+
+// ── Request timeout ───────────────────────────────────────────────────────────
+// PythonAnywhere free tier can be slow to respond.
+// Without a timeout, fetch() hangs forever and the app freezes.
+// 15 seconds is generous enough for slow connections.
+const REQUEST_TIMEOUT_MS = 15000;
+
+function fetchWithTimeout(url, options) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error("Request timed out. The server is taking too long to respond. Please try again."));
+    }, REQUEST_TIMEOUT_MS);
+
+    fetch(url, options)
+      .then(resolve)
+      .catch(reject)
+      .finally(() => clearTimeout(timer));
+  });
+}
 
 async function getHeaders() {
   const token = await AsyncStorage.getItem("authToken");
@@ -26,8 +43,12 @@ async function request(method, endpoint, body = null) {
     const headers = await getHeaders();
     const config  = { method, headers };
     if (body) config.body = JSON.stringify(body);
-    res = await fetch(`${BASE_URL}${endpoint}`, config);
-  } catch (_) {
+    res = await fetchWithTimeout(`${BASE_URL}${endpoint}`, config);
+  } catch (err) {
+    // Distinguish timeout from connection refused
+    if (err.message && err.message.includes("timed out")) {
+      throw new Error("Request timed out. The server is taking too long to respond. Please try again.");
+    }
     throw new Error("Unable to connect to the server. Please check your internet connection and try again.");
   }
 
@@ -55,7 +76,8 @@ async function request(method, endpoint, body = null) {
 
 export const api = {
   // ── Auth ──────────────────────────────────────────────────────────────────
-  login:    (username, password) => request("POST", "/auth/login/",    { username, password }),
+  // IMPORTANT: these URLs must match piggery/urls.py exactly
+  login:    (username, password) => request("POST", "/auth/token/",    { username, password }),
   register: (data)               => request("POST", "/auth/register/", data),
   logout:   ()                   => request("POST", "/auth/logout/"),
 
@@ -63,14 +85,14 @@ export const api = {
   getDashboard:    (farmId) => request("GET", `/farms/${farmId}/dashboard/`),
   getWeather:      (farmId) => request("GET", `/farms/${farmId}/weather/`),
 
-  // ── Farm Analytics (new endpoints) ───────────────────────────────────────
+  // ── Farm Analytics ────────────────────────────────────────────────────────
   getHealthAnalytics:   (farmId) => request("GET", `/farms/${farmId}/health_analytics/`),
   getGrowthAnalytics:   (farmId) => request("GET", `/farms/${farmId}/growth_analytics/`),
   getBreedingAnalytics: (farmId) => request("GET", `/farms/${farmId}/breeding_analytics/`),
   getFeedAnalytics:     (farmId) => request("GET", `/farms/${farmId}/feed_analytics/`),
   getFarmPredictions:   (farmId) => request("GET", `/farms/${farmId}/predictions/`),
 
-  // ── Farm Onboarding (baseline) ────────────────────────────────────────────
+  // ── Farm Onboarding ───────────────────────────────────────────────────────
   saveFarmBaseline: (farmId, data) => request("POST", `/farms/${farmId}/save_baseline/`, data),
 
   // ── Pigs ──────────────────────────────────────────────────────────────────
@@ -84,7 +106,7 @@ export const api = {
   deletePig:       (id)       => request("DELETE", `/pigs/${id}/`),
   getNextPigId:    ()         => request("GET",    "/pigs/next_pig_id/"),
 
-  // ── Pig Baseline (historical data for existing pigs) ──────────────────────
+  // ── Pig Baseline ──────────────────────────────────────────────────────────
   savePigBaseline: (pigId, data) => request("POST", `/pigs/${pigId}/save_baseline/`, data),
   getPigBaseline:  (pigId)       => request("GET",  `/pigs/${pigId}/baseline/`),
 
@@ -150,5 +172,5 @@ export const api = {
   resetUserPassword: (id) => request("POST", `/admin/farmers/${id}/reset_password/`),
 
   // ── Farmer Analytics ─────────────────────────────────────────────────────
-  getFarmerAnalytics: (userId) => request("GET", `/admin/farmer-analytics/${userId}/`),
+  getFarmerAnalytics: (userId) => request("GET", `/admin/analytics/${userId}/`),
 };

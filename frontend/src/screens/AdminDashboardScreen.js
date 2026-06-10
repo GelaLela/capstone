@@ -1,7 +1,4 @@
-/**
- * frontend/src/screens/AdminDashboardScreen.js
- * All emojis replaced with PNG icons. No tintColor applied.
- */
+
 import React, { useState, useCallback } from "react";
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
@@ -279,7 +276,7 @@ export default function AdminDashboardScreen({ navigation }) {
               key={farmer.id}
               farmer={farmer}
               onPress={() =>
-                navigation.navigate("FarmerAnalytics", {
+                navigation.navigate("FarmerAnalyticsScreen", {
                   farmer,
                 })
               }
@@ -291,7 +288,7 @@ export default function AdminDashboardScreen({ navigation }) {
               onToggle={() => handleToggleUser(farmer)}
               onReset={() => handleResetPassword(farmer)}
               actioning={userAction === farmer.id}
-              onViewAnalytics={() => navigation.navigate("FarmerAnalytics", { farmer })}
+              onViewAnalytics={() => navigation.navigate("FarmerAnalyticsScreen", { farmer })}
             />
           )
         )}
@@ -301,6 +298,7 @@ export default function AdminDashboardScreen({ navigation }) {
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
+
 
 function StatCard({ icon, label, value, color, bg }) {
   return (
@@ -440,6 +438,7 @@ function UserManagementCard({ farmer, onToggle, onReset, actioning, onViewAnalyt
     </View>
   );
 }
+
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({

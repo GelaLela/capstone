@@ -163,11 +163,33 @@ export default function AddPigScreen({ navigation }) {
   function validateHistory() {
     if (pigType !== "existing") return true;
     if (form.gender !== "female" || form.growth_stage !== "breeder") return true;
-    // Only require farrowing date if total_litters > 0
+
     const e = {};
-    const litters = parseInt(history.total_litters || "0");
-    if (litters > 0 && !history.last_farrowing_date)
-      e.last_farrowing_date = "Last farrowing date is required when entering litter history.";
+
+    // All four breeding history fields are required for existing female breeder pigs.
+    // None of these fields can be left blank — even 0 is a valid entry for litters/piglets.
+    if (history.total_litters.trim() === "") {
+      e.total_litters = "Required. Enter 0 if the breeding history is unknown.";
+    } else if (isNaN(parseInt(history.total_litters)) || parseInt(history.total_litters) < 0) {
+      e.total_litters = "Must be 0 or a positive whole number.";
+    }
+
+    if (history.total_piglets_born.trim() === "") {
+      e.total_piglets_born = "Required. Enter 0 if unknown.";
+    } else if (isNaN(parseInt(history.total_piglets_born)) || parseInt(history.total_piglets_born) < 0) {
+      e.total_piglets_born = "Must be 0 or a positive whole number.";
+    }
+
+    if (history.total_piglets_weaned.trim() === "") {
+      e.total_piglets_weaned = "Required. Enter 0 if unknown.";
+    } else if (isNaN(parseInt(history.total_piglets_weaned)) || parseInt(history.total_piglets_weaned) < 0) {
+      e.total_piglets_weaned = "Must be 0 or a positive whole number.";
+    }
+
+    if (!history.last_farrowing_date) {
+      e.last_farrowing_date = "Required. Select the date of the last farrowing.";
+    }
+
     setHistErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -213,16 +235,20 @@ export default function AddPigScreen({ navigation }) {
         }
 
         // Submit baseline — backend auto-creates BreedingRecord rows
+        // Build the baseline payload.
+        // Use explicit string-length checks rather than truthy checks.
+        // Truthy checks drop valid "0" values: if (history.total_litters) fails
+        // when the farmer enters "0", so 0 is never sent to the backend.
         const bp = {};
-        if (history.total_litters)              bp.total_litters              = parseInt(history.total_litters);
-        if (history.total_piglets_born)         bp.total_piglets_born         = parseInt(history.total_piglets_born);
-        if (history.total_piglets_weaned)       bp.total_piglets_weaned       = parseInt(history.total_piglets_weaned);
-        if (history.last_farrowing_date)        bp.last_farrowing_date        = history.last_farrowing_date;
-        if (history.major_diseases_history)     bp.major_diseases_history     = history.major_diseases_history;
-        if (history.vaccination_status_summary) bp.vaccination_status_summary = history.vaccination_status_summary;
-        if (history.weight_at_6_months)         bp.weight_at_6_months         = parseFloat(history.weight_at_6_months);
-        if (history.weight_at_12_months)        bp.weight_at_12_months        = parseFloat(history.weight_at_12_months);
-        if (history.notes)                      bp.notes                      = history.notes;
+        if (history.total_litters.trim() !== "")              bp.total_litters              = parseInt(history.total_litters);
+        if (history.total_piglets_born.trim() !== "")         bp.total_piglets_born         = parseInt(history.total_piglets_born);
+        if (history.total_piglets_weaned.trim() !== "")       bp.total_piglets_weaned       = parseInt(history.total_piglets_weaned);
+        if (history.last_farrowing_date)                      bp.last_farrowing_date        = history.last_farrowing_date;
+        if (history.major_diseases_history.trim() !== "")     bp.major_diseases_history     = history.major_diseases_history;
+        if (history.vaccination_status_summary.trim() !== "") bp.vaccination_status_summary = history.vaccination_status_summary;
+        if (history.weight_at_6_months.trim() !== "")         bp.weight_at_6_months         = parseFloat(history.weight_at_6_months);
+        if (history.weight_at_12_months.trim() !== "")        bp.weight_at_12_months        = parseFloat(history.weight_at_12_months);
+        if (history.notes.trim() !== "")                      bp.notes                      = history.notes;
 
         if (Object.keys(bp).length > 0) {
           const result = await api.savePigBaseline(pig.id, bp);
@@ -334,7 +360,14 @@ export default function AddPigScreen({ navigation }) {
                     active={form.gender === g}
                     activeColor={g === "female" ? COLORS.pink : COLORS.blue}
                     activeBg={g === "female" ? COLORS.pinkBg : COLORS.blueBg}
-                    onPress={() => setF("gender", g)} />
+                    onPress={() => {
+                      setF("gender", g);
+                      // If switching to male and current stage is breeder,
+                      // reset to piglet — male pigs cannot be breeders.
+                      if (g === "male" && form.growth_stage === "breeder") {
+                        setF("growth_stage", "piglet");
+                      }
+                    }} />
                 ))}
               </View>
               {errors.gender ? <Text style={s.errorText}>{errors.gender}</Text> : null}
@@ -362,7 +395,9 @@ export default function AddPigScreen({ navigation }) {
           <>
             <SCard title="Growth Stage" icon={ICONS.analytics} required error={errors.growth_stage}>
               <View style={s.stageGrid}>
-                {STAGES.map(stage => {
+                {STAGES
+                  .filter(stage => !(form.gender === "male" && stage === "breeder"))
+                  .map(stage => {
                   const icon   = stage === "breeder" ? ICONS.pregnant : ICONS.pig;
                   const active = form.growth_stage === stage;
                   return (
@@ -416,26 +451,32 @@ export default function AddPigScreen({ navigation }) {
               </Text>
             </View>
 
-            {form.gender === "female" && (
+            {form.gender === "female" && form.growth_stage === "breeder" && (
               <SCard title="Breeding History" icon={ICONS.breeding} subtitle="Previous pregnancies before joining Piglytics">
-                <VInput label="Total litters produced">
-                  <TextInput style={s.input} value={history.total_litters}
-                    onChangeText={v => setH("total_litters", v)}
+                <VInput label="Total litters produced" required={form.gender === "female" && form.growth_stage === "breeder"} error={histErrors.total_litters}>
+                  <TextInput style={[s.input, histErrors.total_litters && s.inputError]} value={history.total_litters}
+                    onChangeText={v => { setH("total_litters", v); if (histErrors.total_litters) setHistErrors(p => ({ ...p, total_litters: null })); }}
                     placeholder="e.g. 4" placeholderTextColor={COLORS.textMuted} keyboardType="number-pad" />
                 </VInput>
-                <VInput label="Total piglets born alive (all litters)">
-                  <TextInput style={s.input} value={history.total_piglets_born}
-                    onChangeText={v => setH("total_piglets_born", v)}
+                <VInput
+                  label="Total piglets born alive (all litters)"
+                  required={form.gender === "female" && form.growth_stage === "breeder"}
+                  error={histErrors.total_piglets_born}>
+                  <TextInput style={[s.input, histErrors.total_piglets_born && s.inputError]} value={history.total_piglets_born}
+                    onChangeText={v => { setH("total_piglets_born", v); if (histErrors.total_piglets_born) setHistErrors(p => ({ ...p, total_piglets_born: null })); }}
                     placeholder="e.g. 42" placeholderTextColor={COLORS.textMuted} keyboardType="number-pad" />
                 </VInput>
-                <VInput label="Total piglets weaned (all litters)">
-                  <TextInput style={s.input} value={history.total_piglets_weaned}
-                    onChangeText={v => setH("total_piglets_weaned", v)}
+                <VInput
+                  label="Total piglets weaned (all litters)"
+                  required={form.gender === "female" && form.growth_stage === "breeder"}
+                  error={histErrors.total_piglets_weaned}>
+                  <TextInput style={[s.input, histErrors.total_piglets_weaned && s.inputError]} value={history.total_piglets_weaned}
+                    onChangeText={v => { setH("total_piglets_weaned", v); if (histErrors.total_piglets_weaned) setHistErrors(p => ({ ...p, total_piglets_weaned: null })); }}
                     placeholder="e.g. 38" placeholderTextColor={COLORS.textMuted} keyboardType="number-pad" />
                 </VInput>
                 <DateField
-                  label={parseInt(history.total_litters || "0") > 0 ? "Last farrowing date" : "Last farrowing date (optional)"}
-                  required={parseInt(history.total_litters || "0") > 0}
+                  label="Last farrowing date"
+                  required={form.gender === "female" && form.growth_stage === "breeder"}
                   value={history.last_farrowing_date}
                   onChange={v => { setH("last_farrowing_date", v); setHistErrors(p => ({ ...p, last_farrowing_date: null })); }}
                   error={histErrors.last_farrowing_date}

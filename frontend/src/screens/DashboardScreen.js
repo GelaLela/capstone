@@ -1,3 +1,12 @@
+/**
+ * frontend/src/screens/DashboardScreen.js
+ *
+ * Fixes applied:
+ *  - Logout button restored (was missing from previous version)
+ *  - Notification bell shows red badge when unread notifications exist
+ *  - All tintColor removed from Icon calls — PNGs are already colored
+ *  - Active states use opacity/background, not color transforms
+ */
 import React, { useState, useCallback } from "react";
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
@@ -35,13 +44,14 @@ export default function DashboardScreen({ navigation }) {
   async function load() {
     if (!farmId) return;
     try {
-      const [d, wx, notifs] = await Promise.all([
+      // Load dashboard and notifications together.
+      // Weather is loaded SEPARATELY so a weather timeout (5–15s on PythonAnywhere)
+      // never blocks the dashboard from rendering.
+      const [d, notifs] = await Promise.all([
         api.getDashboard(farmId),
-        api.getWeather(farmId),
         api.getNotifications(),
       ]);
       setDash(d);
-      setWeather(wx);
       const notifList = notifs?.results || notifs || [];
       setUnreadCount(notifList.filter(n => !n.is_read).length);
     } catch (e) {
@@ -49,6 +59,16 @@ export default function DashboardScreen({ navigation }) {
     } finally {
       setLoading(false);
       setRefreshing(false);
+    }
+
+    // Weather loads independently — failure shows "unavailable" card,
+    // never freezes the dashboard.
+    try {
+      const wx = await api.getWeather(farmId);
+      setWeather(wx);
+    } catch (e) {
+      console.error("Weather load:", e.message);
+      setWeather({ temperature_c: null, error: "Weather unavailable" });
     }
   }
 
@@ -196,7 +216,7 @@ export default function DashboardScreen({ navigation }) {
         <Text style={s.sectionTitle}>Weather & Environment</Text>
         {weather ? (
           weather.temperature_c != null ? (
-            <WeatherComfortCard weather={weather} location={dash?.farm_location || "Concepcion, Tarlac"} />
+            <WeatherComfortCard weather={weather} location={dash?.farm_location || "Concepcion, Piangbakuran"} />
           ) : (
             <View style={{ backgroundColor: COLORS.white, borderRadius: RADIUS.xl, padding: 20, alignItems: "center", ...SHADOW.sm }}>
               <Text style={{ fontSize: 13, color: COLORS.textMuted }}>Weather data unavailable — check internet connection</Text>
@@ -382,39 +402,33 @@ function ForecastRow({ icon, title, sub, onPress, urgent }) {
 }
 
 // ── WeatherComfortCard ────────────────────────────────────────────────────────
-// Redesigned: permanent top block always shows temperature, condition,
-// humidity, wind, and location. Pig comfort section always visible below.
-// Per-stage breakdown is expandable.
+// Displays actual Open-Meteo weather data.
+// Compares temperature against scientifically accepted pig comfort zones.
+// Per-stage breakdown shows °C and °F, comfort zone range, and recommendations.
 
-const COMFORT_COLORS = {
-  comfortable:  COLORS.healthy,
-  mild_warning: COLORS.amber,
-  warning:      COLORS.warning,
-  high_risk:    COLORS.danger,
-  critical:     COLORS.danger,
+const STATUS_COLORS = {
+  normal:      COLORS.healthy,
+  cold_stress: COLORS.blue,
+  heat_stress: COLORS.danger,
 };
-const COMFORT_BG = {
-  comfortable:  COLORS.healthyBg,
-  mild_warning: COLORS.amberBg,
-  warning:      COLORS.warningBg,
-  high_risk:    COLORS.dangerBg,
-  critical:     COLORS.dangerBg,
+const STATUS_BG = {
+  normal:      COLORS.healthyBg,
+  cold_stress: COLORS.blueBg,
+  heat_stress: COLORS.dangerBg,
 };
-const COMFORT_LABEL = {
-  comfortable:  "Comfortable",
-  mild_warning: "Mild Risk",
-  warning:      "Warning",
-  high_risk:    "High Risk",
-  critical:     "Critical",
+const STATUS_LABELS = {
+  normal:      "Normal",
+  cold_stress: "Cold Stress Risk",
+  heat_stress: "Heat Stress Risk",
 };
-// Risk level label used in the Environmental Risk Level row
 const RISK_LEVEL_LABEL = {
-  comfortable:  "Normal",
-  mild_warning: "Warning",
-  warning:      "Warning",
-  high_risk:    "High Risk",
-  critical:     "Critical",
+  normal:      "Low Risk",
+  cold_stress: "Cold Risk",
+  heat_stress: "Heat Risk",
 };
+// COMFORT_LABELS and COMFORT_LABEL (both spellings) used in stage_risks.map
+const COMFORT_LABELS = STATUS_LABELS;
+const COMFORT_LABEL  = STATUS_LABELS;
 
 function WeatherComfortCard({ weather, location }) {
   const [expanded, setExpanded] = useState(false);
@@ -426,9 +440,9 @@ function WeatherComfortCard({ weather, location }) {
   const condition = weather.condition     || "Partly Cloudy";
   const comfort   = weather.pig_comfort;
 
-  const status    = comfort?.overall_status || "comfortable";
-  const ringColor = COMFORT_COLORS[status]  || COLORS.blue;
-  const chipBg    = COMFORT_BG[status]      || COLORS.blueBg;
+  const status    = comfort?.overall_status || "normal";
+  const ringColor = STATUS_COLORS[status]   || COLORS.blue;
+  const chipBg    = STATUS_BG[status]        || COLORS.blueBg;
   const effTemp   = comfort?.effective_temp;
   const showEff   = effTemp != null && effTemp > temp;
 
@@ -466,7 +480,7 @@ function WeatherComfortCard({ weather, location }) {
           </View>
           <View style={[wc.statusChip, { backgroundColor: chipBg }]}>
             <Text style={[wc.statusChipText, { color: ringColor }]}>
-              {COMFORT_LABEL[status] || "Comfortable"}
+              {STATUS_LABELS[status] || "Comfortable"}
             </Text>
           </View>
         </View>
@@ -513,8 +527,8 @@ function WeatherComfortCard({ weather, location }) {
             </TouchableOpacity>
 
             {expanded && comfort.stage_risks.map((sr, i) => {
-              const srColor = COMFORT_COLORS[sr.status] || COLORS.textMuted;
-              const srBg    = COMFORT_BG[sr.status]    || COLORS.screenBg;
+              const srColor = STATUS_COLORS[sr.status]  || COLORS.textMuted;
+              const srBg    = STATUS_BG[sr.status]     || COLORS.screenBg;
               return (
                 <View key={i} style={[wc.stageRow, { borderLeftColor: srColor }]}>
                   <View style={{ flex: 1 }}>
@@ -522,7 +536,7 @@ function WeatherComfortCard({ weather, location }) {
                       <Text style={wc.stageName}>{sr.label}</Text>
                       <View style={[wc.stageChip, { backgroundColor: srBg }]}>
                         <Text style={[wc.stageChipText, { color: srColor }]}>
-                          {COMFORT_LABEL[sr.status] || "Comfortable"}
+                          {STATUS_LABELS[sr.status] || "Comfortable"}
                         </Text>
                       </View>
                       {sr.pig_count != null && (

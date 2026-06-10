@@ -23,6 +23,7 @@ export default function LoginScreen({ onRegister }) {
   const [errors,   setErrors]   = useState({});
   const passwordRef = useRef(null);
 
+
   function validate() {
     const e = {};
     if (!username.trim()) e.username = "Username is required.";
