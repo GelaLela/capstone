@@ -70,7 +70,7 @@ def auto_create_farm(user):
         owner=user,
         defaults={
             "name":     f"{user.first_name or user.username}'s Farm",
-            "location": "Concepcion, Tarlac",
+            "location": "Concepcion, Pinagbakuran",
         },
     )
     return farm
@@ -211,7 +211,7 @@ class FarmViewSet(viewsets.ModelViewSet):
         return Response({
             # Status
             "farm_name":          farm.name,
-            "farm_location":      farm.location or "Concepcion, Tarlac",
+            "farm_location":      farm.location or "Concepcion, Pinagbakuran",
             "total_pigs":         total,
             "healthy":            healthy,
             "under_treatment":    under_treatment,
