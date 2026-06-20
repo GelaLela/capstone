@@ -1,4 +1,4 @@
-amqp==5.3.1apstone\piglytics>
+amqp==5.3.1apstone
 asgiref==3.11.1
 billiard==4.2.4
 celery==5.3.6
