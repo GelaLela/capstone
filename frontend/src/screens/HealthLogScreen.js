@@ -510,9 +510,14 @@ export default function HealthLogScreen({ route }) {
               </View>
 
               <View style={s.logVitals}>
-                {log.temperature_c    && <VBadge icon={ICONS.analytics} label={`${log.temperature_c}°C`} />}
-                {log.respiratory_rate && <VBadge icon={ICONS.analytics} label={`${log.respiratory_rate} br/m`} />}
-                {log.heart_rate       && <VBadge icon={ICONS.analytics} label={`${log.heart_rate} BPM`} />}
+                {log.temperature_c    && log.temperature_c    !== "N/A" && <VBadge icon={ICONS.analytics} label={`${log.temperature_c}°C`} />}
+                {log.respiratory_rate && log.respiratory_rate !== "N/A" && <VBadge icon={ICONS.analytics} label={`${log.respiratory_rate} br/m`} />}
+                {log.heart_rate       && log.heart_rate       !== "N/A" && <VBadge icon={ICONS.analytics} label={`${log.heart_rate} BPM`} />}
+                {(!log.temperature_c || log.temperature_c === "N/A") &&
+                 (!log.respiratory_rate || log.respiratory_rate === "N/A") &&
+                 (!log.heart_rate || log.heart_rate === "N/A") && (
+                  <VBadge icon={ICONS.analytics} label="Vitals: N/A" />
+                )}
               </View>
 
               <Text style={s.logObs}>

@@ -64,17 +64,23 @@ class HealthLogSerializer(serializers.ModelSerializer):
     """
     Serializes HealthLog records for read and write.
 
-    system_findings and severity are computed by health_rules.evaluate_health_log()
-    in the view before the record is saved, so they are read-only here.
+    'pig' is intentionally NOT in fields — it is injected by the view via
+    serializer.save(pig=pig) in perform_create(). Including 'pig' here would
+    require the frontend to send it in the POST body, but the pig is already
+    known from the URL (/api/pigs/{pig_pk}/health-logs/). DRF runs
+    is_valid() before perform_create(), so a required 'pig' field causes a
+    400 validation error even before the view logic runs.
 
-    All physical sign fields (has_cough, has_nasal_discharge, etc.) are included
-    so analytics can aggregate symptom frequency across the farm.
+    Compare: DiseaseRecordSerializer also omits 'pig' for the same reason.
+
+    system_findings and severity are computed by health_rules.evaluate_health_log()
+    in the view — read-only here.
     """
     class Meta:
         model  = HealthLog
         fields = [
-            "id", "pig", "date_logged", "time_logged",
-            # Vitals
+            "id", "date_logged", "time_logged",
+            # Vitals — nullable, optional
             "temperature_c", "respiratory_rate", "heart_rate",
             # Observations
             "appetite", "behavior", "stool_condition",
@@ -86,6 +92,23 @@ class HealthLogSerializer(serializers.ModelSerializer):
             "notes",
         ]
         read_only_fields = ["severity", "system_findings", "date_logged", "time_logged"]
+
+    def to_representation(self, instance):
+        """
+        Convert None vitals to "N/A" in API responses so the health log
+        history table never shows blank cells for optional fields.
+        Numeric fields (temperature_c, respiratory_rate, heart_rate) are
+        stored as NULL in the database when not recorded — this method
+        converts them to the string "N/A" only for display purposes.
+        The model values remain NULL so numeric validation is not affected.
+        """
+        data = super().to_representation(instance)
+        for field in ("temperature_c", "respiratory_rate", "heart_rate"):
+            if data.get(field) is None:
+                data[field] = "N/A"
+        if not data.get("notes"):
+            data["notes"] = "N/A"
+        return data
 
 
 class BreedingRecordSerializer(serializers.ModelSerializer):
