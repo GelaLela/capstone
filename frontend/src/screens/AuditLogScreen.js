@@ -76,6 +76,7 @@ export default function AuditLogScreen() {
   const [actionFilter, setActionFilter] = useState("All");
   const [dateFrom, setDateFrom]   = useState("");
   const [dateTo, setDateTo]       = useState("");
+  const [usernameFilter, setUsernameFilter] = useState("");
   const [showFilters, setShowFilters] = useState(false);
 
   useFocusEffect(useCallback(() => {
@@ -90,6 +91,7 @@ export default function AuditLogScreen() {
       if (search.trim())          params.search    = search.trim();
       if (dateFrom.trim())        params.date_from = dateFrom.trim();
       if (dateTo.trim())          params.date_to   = dateTo.trim();
+      if (usernameFilter.trim())  params.username  = usernameFilter.trim();
 
       const data = await api.getAuditLogs(params);
       setLogs(data.results || data);
@@ -248,6 +250,16 @@ export default function AuditLogScreen() {
                 onChangeText={setDateTo} />
             </View>
           </View>
+
+          <Text style={s.filterSectionLabel}>Filter by farmer</Text>
+          <TextInput
+            style={s.dateInput}
+            placeholder="Enter username to filter by farmer..."
+            placeholderTextColor={COLORS.textMuted}
+            value={usernameFilter}
+            onChangeText={setUsernameFilter}
+            autoCapitalize="none"
+          />
 
           <Text style={s.filterSectionLabel}>Filter by action</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}

@@ -310,6 +310,17 @@ class FarmViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"])
     def weather(self, request, pk=None):
+        """
+        GET /api/farms/{id}/weather/
+
+        Returns weather data + pig-specific risk assessment.
+        The farm object is passed to evaluate_farm_weather_risk() so
+        per-stage risk is computed using the actual pig population.
+
+        Also creates weather notifications when unsafe conditions are detected.
+        Notifications are deduplicated: only creates a new one if no unread
+        weather notification with the same title exists for today.
+        """
         try:
             farm  = self.get_object()
             # Pass the farm object so get_weather_alert can evaluate
@@ -630,7 +641,10 @@ class VaccinationViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         pig = Pig.objects.get(pk=self.kwargs["pig_pk"])
-        serializer.save(pig=pig)
+        record = serializer.save(pig=pig)
+        log_action(self.request.user, "create", "VaccinationRecord", record.id,
+                   f"Added vaccination record for {pig.name} ({pig.pig_id}): {record.vaccine_name} given on {record.date_given}",
+                   self.request)
 
     @action(detail=False, methods=["post"])
     def schedule(self, request, pig_pk=None):
@@ -680,6 +694,9 @@ class VaccinationViewSet(viewsets.ModelViewSet):
                 title=f"Vaccination scheduled: {pig.name}",
                 message=f"{record.vaccine_name} scheduled for {pig.name} on {record.next_due_date}.",
             )
+            log_action(request.user, "create", "VaccinationRecord", record.id,
+                       f"Scheduled vaccination for {pig.name} ({pig.pig_id}): {record.vaccine_name} due on {record.next_due_date}",
+                       request)
             return Response(serializer.data, status=201)
         return Response(serializer.errors, status=400)
 
@@ -699,6 +716,9 @@ class DiseaseViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         pig = Pig.objects.get(pk=self.kwargs["pig_pk"])
         record = serializer.save(pig=pig)
+        log_action(self.request.user, "create", "DiseaseRecord", record.id,
+                   f"Added disease record for {pig.name} ({pig.pig_id}): {record.disease_name} diagnosed on {record.diagnosed_date}",
+                   self.request)
         try:
             send_sms(
                 phone=pig.farm.owner.profile.phone_number,
@@ -718,6 +738,31 @@ class BreedingViewSet(viewsets.ModelViewSet):
         return BreedingRecord.objects.filter(
             sow__farm__owner=self.request.user
         ).select_related("sow").order_by("-breeding_date")
+
+    def perform_update(self, serializer):
+        """
+        Logs meaningful descriptions for breeding record updates.
+        Called by PATCH /api/breeding/{id}/ — used for Mark Pregnant.
+        """
+        old_status = serializer.instance.pregnancy_status
+        record = serializer.save()
+        new_status = record.pregnancy_status
+        if old_status != new_status:
+            status_labels = {
+                "pregnant": "confirmed pregnancy",
+                "bred":     "recorded as bred",
+                "farrowed": "recorded farrowing",
+                "failed":   "marked breeding as failed",
+                "open":     "marked as open",
+            }
+            label = status_labels.get(new_status, f"updated status to {new_status}")
+            log_action(self.request.user, "update", "BreedingRecord", record.id,
+                       f"Breeding update for {record.sow.name} ({record.sow.pig_id}): {label}",
+                       self.request)
+        else:
+            log_action(self.request.user, "update", "BreedingRecord", record.id,
+                       f"Updated breeding record for {record.sow.name} ({record.sow.pig_id})",
+                       self.request)
 
     def perform_create(self, serializer):
         record = serializer.save()
@@ -1158,6 +1203,9 @@ class FeedInventoryViewSet(viewsets.ModelViewSet):
             farm=feed.farm, feed=feed, amount_used_kg=amount,
             logged_by=request.user,
         )
+        log_action(request.user, "create", "FeedUsageLog", feed.id,
+                   f"Recorded feed usage: {amount}kg of {feed.get_feed_type_display()} — {feed.stock_kg}kg remaining",
+                   request)
 
         if float(feed.stock_kg) <= 25:
             already = Notification.objects.filter(
@@ -1205,10 +1253,17 @@ class MedicineInventoryViewSet(viewsets.ModelViewSet):
         name     = serializer.validated_data.get("name", "").strip().lower()
         existing = MedicineInventory.objects.filter(farm=farm, name__iexact=name).first()
         if existing:
-            existing.quantity += serializer.validated_data.get("quantity", 0)
+            add_qty = serializer.validated_data.get("quantity", 0)
+            existing.quantity += add_qty
             existing.save()
+            log_action(self.request.user, "update", "MedicineInventory", existing.id,
+                       f"Restocked medicine: {existing.name} +{add_qty} {existing.unit}",
+                       self.request)
         else:
-            serializer.save(farm=farm)
+            obj = serializer.save(farm=farm)
+            log_action(self.request.user, "create", "MedicineInventory", obj.id,
+                       f"Added medicine inventory: {obj.name} ({obj.quantity} {obj.unit})",
+                       self.request)
 
     @action(detail=True, methods=["post"])
     def update_stock(self, request, pk=None):
@@ -1249,6 +1304,10 @@ class MedicineInventoryViewSet(viewsets.ModelViewSet):
                     ),
                 )
 
+        action_label = "deducted from" if action_type == "deduct" else "added to"
+        log_action(request.user, "update", "MedicineInventory", medicine.id,
+                   f"Recorded medicine usage: {amount} {medicine.unit} {action_label} {medicine.name} — {medicine.quantity} {medicine.unit} remaining",
+                   request)
         return Response(MedicineInventorySerializer(medicine).data)
 
 
@@ -1326,6 +1385,10 @@ class HealthLogViewSet(viewsets.ModelViewSet):
             except Exception:
                 pass
 
+        log_action(self.request.user, "create", "HealthLog", log.id,
+                   f"Recorded health check for {pig.name} ({pig.pig_id}) — severity: {severity}",
+                   self.request)
+
 
 # ── Audit Log ─────────────────────────────────────────────────────────────────
 
@@ -1338,6 +1401,7 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
         search        = request.query_params.get("search", "").strip()
         date_from     = request.query_params.get("date_from")
         date_to       = request.query_params.get("date_to")
+        username      = request.query_params.get("username", "").strip()
 
         if request.user.is_staff or request.user.is_superuser:
             logs = AuditLog.objects.all()
@@ -1346,6 +1410,8 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
 
         if action_filter:
             logs = logs.filter(action=action_filter)
+        if username:
+            logs = logs.filter(user__username__icontains=username)
         if search:
             from django.db.models import Q
             logs = logs.filter(
