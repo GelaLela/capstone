@@ -624,7 +624,10 @@ class WeightRecordViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         pig = Pig.objects.get(pk=self.kwargs["pig_pk"])
-        serializer.save(pig=pig)
+        record = serializer.save(pig=pig)
+        log_action(self.request.user, "create", "WeightRecord", record.id,
+                   f"Recorded weight check for {pig.name} ({pig.pig_id}): {record.weight_kg}kg on {record.recorded_at}",
+                   self.request)
 
 
 # ── Vaccination ───────────────────────────────────────────────────────────────
@@ -1396,6 +1399,7 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def list(self, request):
+        from django.utils import timezone as tz
         # Filters
         action_filter = request.query_params.get("action")
         search        = request.query_params.get("search", "").strip()
@@ -1435,13 +1439,14 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
             "model_name":   log.model_name,
             "description":  log.description,
             "ip_address":   log.ip_address,
-            "created_at":   log.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "created_at":   tz.localtime(log.created_at).strftime("%Y-%m-%d %H:%M:%S"),
         } for log in logs]
 
         return Response(data)
 
     @action(detail=False, methods=["get"])
     def download_csv(self, request):
+        from django.utils import timezone as tz
         from django.http import HttpResponse
         if request.user.is_staff or request.user.is_superuser:
             logs = AuditLog.objects.all()
@@ -1454,7 +1459,7 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
         writer.writerow(["Date & Time", "Username", "Full Name", "Action", "Module", "Description", "IP Address"])
         for log in logs:
             writer.writerow([
-                log.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+                tz.localtime(log.created_at).strftime("%Y-%m-%d %H:%M:%S"),
                 log.user.username if log.user else "deleted",
                 f"{log.user.first_name} {log.user.last_name}".strip() if log.user else "",
                 log.get_action_display(),
@@ -1466,6 +1471,7 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=["get"])
     def download_excel(self, request):
+        from django.utils import timezone as tz
         from django.http import HttpResponse
         import openpyxl
         from openpyxl.styles import Font, PatternFill, Alignment
@@ -1488,7 +1494,7 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
             cell.alignment = Alignment(horizontal="center")
 
         for row_num, log in enumerate(logs, 2):
-            ws.cell(row=row_num, column=1, value=log.created_at.strftime("%Y-%m-%d %H:%M:%S"))
+            ws.cell(row=row_num, column=1, value=tz.localtime(log.created_at).strftime("%Y-%m-%d %H:%M:%S"))
             ws.cell(row=row_num, column=2, value=log.user.username if log.user else "deleted")
             ws.cell(row=row_num, column=3, value=f"{log.user.first_name} {log.user.last_name}".strip() if log.user else "")
             ws.cell(row=row_num, column=4, value=log.get_action_display())
@@ -1509,6 +1515,7 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=["get"])
     def download_pdf(self, request):
+        from django.utils import timezone as tz
         from django.http import HttpResponse
         from reportlab.lib.pagesizes import A4, landscape
         from reportlab.lib import colors
@@ -1530,7 +1537,7 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
         table_data = [["Date & Time", "Username", "Action", "Module", "Description"]]
         for log in logs:
             table_data.append([
-                log.created_at.strftime("%Y-%m-%d %H:%M"),
+                tz.localtime(log.created_at).strftime("%Y-%m-%d %H:%M"),
                 log.user.username if log.user else "deleted",
                 log.get_action_display(),
                 log.model_name or "—",
