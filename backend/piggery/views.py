@@ -620,7 +620,7 @@ class WeightRecordViewSet(viewsets.ModelViewSet):
         pig_id = self.kwargs.get("pig_pk")
         return WeightRecord.objects.filter(
             pig__id=pig_id, pig__farm__owner=self.request.user
-        )
+        ).order_by("-recorded_at", "-id")
 
     def perform_create(self, serializer):
         pig = Pig.objects.get(pk=self.kwargs["pig_pk"])
@@ -640,7 +640,7 @@ class VaccinationViewSet(viewsets.ModelViewSet):
         pig_id = self.kwargs.get("pig_pk")
         return VaccinationRecord.objects.filter(
             pig__id=pig_id, pig__farm__owner=self.request.user
-        )
+        ).order_by("-date_given", "-id")
 
     def perform_create(self, serializer):
         pig = Pig.objects.get(pk=self.kwargs["pig_pk"])
@@ -714,7 +714,7 @@ class DiseaseViewSet(viewsets.ModelViewSet):
         pig_id = self.kwargs.get("pig_pk")
         return DiseaseRecord.objects.filter(
             pig__id=pig_id, pig__farm__owner=self.request.user
-        )
+        ).order_by("-diagnosed_date", "-id")
 
     def perform_create(self, serializer):
         pig = Pig.objects.get(pk=self.kwargs["pig_pk"])
@@ -1351,7 +1351,7 @@ class HealthLogViewSet(viewsets.ModelViewSet):
         pig_id = self.kwargs.get("pig_pk")
         return HealthLog.objects.filter(
             pig__id=pig_id, pig__farm__owner=self.request.user
-        )
+        ).order_by("-date_logged", "-time_logged", "-id")
 
     def perform_create(self, serializer):
         from .services.health_rules import evaluate_health_log

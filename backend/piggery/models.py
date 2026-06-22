@@ -162,6 +162,9 @@ class VaccinationRecord(models.Model):
     administered_by = models.CharField(max_length=200, blank=True)
     notes           = models.TextField(blank=True)
 
+    class Meta:
+        ordering = ["-date_given", "-id"]
+
     def __str__(self):
         return f"{self.pig.name} — {self.vaccine_name}"
 
@@ -192,6 +195,9 @@ class DiseaseRecord(models.Model):
     outcome       = models.CharField(max_length=20, choices=OUTCOME_CHOICES, default="ongoing")
     resolved_date = models.DateField(null=True, blank=True)
     notes         = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-diagnosed_date", "-id"]
 
     def __str__(self):
         return f"{self.pig.name} — {self.disease_name}"
@@ -279,6 +285,9 @@ class BreedingRecord(models.Model):
             from datetime import timedelta
             self.expected_farrowing_date = self.breeding_date + timedelta(days=114)
         super().save(*args, **kwargs)
+
+    class Meta:
+        ordering = ["-breeding_date", "-id"]
 
     def __str__(self):
         return f"{self.sow.name} bred on {self.breeding_date}"
