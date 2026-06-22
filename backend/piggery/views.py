@@ -310,17 +310,6 @@ class FarmViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"])
     def weather(self, request, pk=None):
-        """
-        GET /api/farms/{id}/weather/
-
-        Returns weather data + pig-specific risk assessment.
-        The farm object is passed to evaluate_farm_weather_risk() so
-        per-stage risk is computed using the actual pig population.
-
-        Also creates weather notifications when unsafe conditions are detected.
-        Notifications are deduplicated: only creates a new one if no unread
-        weather notification with the same title exists for today.
-        """
         try:
             farm  = self.get_object()
             # Pass the farm object so get_weather_alert can evaluate
@@ -728,7 +717,7 @@ class BreedingViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return BreedingRecord.objects.filter(
             sow__farm__owner=self.request.user
-        ).select_related("sow")
+        ).select_related("sow").order_by("-breeding_date")
 
     def perform_create(self, serializer):
         record = serializer.save()

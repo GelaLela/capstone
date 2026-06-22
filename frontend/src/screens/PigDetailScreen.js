@@ -3,6 +3,7 @@
  * All emojis replaced with PNG icons. No tintColor applied.
  */
 import React, { useEffect, useState } from "react";
+import { SafeAreaView } from "react-native-safe-area-context";
 import {
   View, Text, ScrollView, StyleSheet, Modal,
   TouchableOpacity, ActivityIndicator, TextInput, Alert, Image,
@@ -258,8 +259,9 @@ export default function PigDetailScreen({ route, navigation }) {
             </View>
 
             {/* Vaccination modal */}
-            <Modal visible={vaxModal} animationType="slide" presentationStyle="pageSheet">
-              <View style={s.modal}>
+            <Modal visible={vaxModal} animationType="slide" presentationStyle="pageSheet"
+          onRequestClose={() => { setVaxModal(false); setVaxErrors({}); }}>
+              <SafeAreaView style={s.modal}>
                 <View style={s.modalHeader}>
                   <Text style={s.modalTitle}>Schedule Vaccination</Text>
                   <TouchableOpacity onPress={() => { setVaxModal(false); setVaxErrors({}); setShowVaxDatePicker(false); }}>
@@ -316,7 +318,7 @@ export default function PigDetailScreen({ route, navigation }) {
                       : <Text style={s.saveBtnText}>Save Schedule</Text>}
                   </TouchableOpacity>
                 </ScrollView>
-              </View>
+              </SafeAreaView>
             </Modal>
           </>
         )}

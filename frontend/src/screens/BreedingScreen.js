@@ -1,3 +1,18 @@
+/**
+ * frontend/src/screens/BreedingScreen.js
+ *
+ * Redesign applied:
+ *  1. Sow selection uses a picker loaded from GET /breeding/eligible_sows/
+ *     No manual ID typing. Displays pig_id + name. Stores internal pig ID.
+ *  2. Breeding date uses DateTimePicker — no free-text date entry.
+ *  3. Failed breeding is a first-class outcome with a "Mark as Failed" action.
+ *     Failed attempts count in pregnancy_success_rate analytics.
+ *  4. Farrowing modal now collects piglets_weaned + wean_date, which feed
+ *     directly into weaning_rate_pct in breeding_analytics.
+ *  5. Metric cards call the real backend breeding_analytics endpoint so
+ *     success % is computed server-side using all records + baseline.
+ *  6. All emojis replaced with PNG icons. No tintColor.
+ */
 import React, { useState, useCallback } from "react";
 import {
   View, Text, ScrollView, StyleSheet,
@@ -6,6 +21,7 @@ import {
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "@react-navigation/native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../services/api";
 import { COLORS, RADIUS, SHADOW } from "../theme";
@@ -111,25 +127,16 @@ export default function BreedingScreen() {
         api.getBreeding(),
         api.getEligibleSows(),
       ]);
-
-      const breedingRecords = br.results || br;
-
-      breedingRecords.sort(
-        (a, b) => new Date(b.breeding_date) - new Date(a.breeding_date)
-      );
-
-      setRecords(breedingRecords);
+      setRecords(br.results || br);
       setEligibleSows(sows);
 
+      // Load server-side breeding analytics for accurate KPIs
       if (farmId) {
         const bAnalytics = await api.getBreedingAnalytics(farmId);
         setAnalytics(bAnalytics);
       }
-    } catch (e) {
-      console.error("BreedingScreen load:", e.message);
-    } finally {
-      setLoading(false);
-    }
+    } catch (e) { console.error("BreedingScreen load:", e.message); }
+    finally { setLoading(false); }
   }
 
   useFocusEffect(useCallback(() => { load(); }, [farmId]));
@@ -391,8 +398,9 @@ export default function BreedingScreen() {
       </TouchableOpacity>
 
       {/* ── ADD RECORD MODAL ──────────────────────────────────────────────── */}
-      <Modal visible={showModal} animationType="slide" presentationStyle="pageSheet">
-        <View style={s.modal}>
+      <Modal visible={showModal} animationType="slide" presentationStyle="pageSheet"
+          onRequestClose={() => { setShowModal(false); resetAddForm(); }}>
+        <SafeAreaView style={s.modal}>
           <View style={s.modalHeader}>
             <Text style={s.modalTitle}>New Breeding Record</Text>
             <TouchableOpacity onPress={() => { setShowModal(false); resetAddForm(); }}>
@@ -460,12 +468,13 @@ export default function BreedingScreen() {
               {saving ? <ActivityIndicator color={COLORS.white} /> : <Text style={s.saveBtnText}>Save Record</Text>}
             </TouchableOpacity>
           </ScrollView>
-        </View>
+        </SafeAreaView>
       </Modal>
 
       {/* ── SOW PICKER MODAL ─────────────────────────────────────────────── */}
-      <Modal visible={showSowPicker} animationType="slide" presentationStyle="pageSheet">
-        <View style={s.modal}>
+      <Modal visible={showSowPicker} animationType="slide" presentationStyle="pageSheet"
+          onRequestClose={() => setShowSowPicker(false)}>
+        <SafeAreaView style={s.modal}>
           <View style={s.modalHeader}>
             <Text style={s.modalTitle}>Select Sow</Text>
             <TouchableOpacity onPress={() => setShowSowPicker(false)}>
@@ -522,12 +531,13 @@ export default function BreedingScreen() {
               }}
             />
           )}
-        </View>
+        </SafeAreaView>
       </Modal>
 
       {/* ── FARROWING MODAL ──────────────────────────────────────────────── */}
-      <Modal visible={farrowModal} animationType="slide" presentationStyle="pageSheet">
-        <View style={s.modal}>
+      <Modal visible={farrowModal} animationType="slide" presentationStyle="pageSheet"
+          onRequestClose={() => setFarrowModal(false)}>
+        <SafeAreaView style={s.modal}>
           <View style={s.modalHeader}>
             <Text style={s.modalTitle}>
               {farrowRecord?.piglets_born_alive != null ? "Update Weaning Data" : "Record Farrowing"} — {farrowRecord?.sow_name}
@@ -585,12 +595,13 @@ export default function BreedingScreen() {
               {savingFarrow ? <ActivityIndicator color={COLORS.white} /> : <Text style={s.saveBtnText}>Save Farrowing Record</Text>}
             </TouchableOpacity>
           </ScrollView>
-        </View>
+        </SafeAreaView>
       </Modal>
 
       {/* ── MARK FAILED MODAL ────────────────────────────────────────────── */}
-      <Modal visible={failedModal} animationType="slide" presentationStyle="formSheet">
-        <View style={s.modal}>
+      <Modal visible={failedModal} animationType="slide" presentationStyle="formSheet"
+          onRequestClose={() => setFailedModal(false)}>
+        <SafeAreaView style={s.modal}>
           <View style={s.modalHeader}>
             <Text style={s.modalTitle}>Mark as Failed — {failedRecord?.sow_name}</Text>
             <TouchableOpacity onPress={() => setFailedModal(false)}>
@@ -616,7 +627,7 @@ export default function BreedingScreen() {
               {savingFailed ? <ActivityIndicator color={COLORS.white} /> : <Text style={s.saveBtnText}>Confirm Failed Attempt</Text>}
             </TouchableOpacity>
           </ScrollView>
-        </View>
+        </SafeAreaView>
       </Modal>
     </View>
   );

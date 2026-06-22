@@ -12,7 +12,7 @@ SECRET_KEY = os.environ.get(
 DEBUG = os.environ.get("DJANGO_DEBUG", "True") != "False"
 
 ALLOWED_HOSTS = [
-    "piglytics.pythonanywhere.com",
+    "newpiglytics.pythonanywhere.com",
     "localhost",
     "127.0.0.1",
     "192.168.1.4"

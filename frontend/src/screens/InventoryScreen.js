@@ -9,6 +9,7 @@ import {
   TouchableOpacity, ActivityIndicator, Alert, TextInput, Image,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "../services/api";
 import { COLORS, RADIUS, SHADOW } from "../theme";
 
@@ -248,8 +249,9 @@ export default function InventoryScreen() {
       </ScrollView>
 
       {/* Add Feed Modal */}
-      <Modal visible={addFeedModal} animationType="slide" presentationStyle="pageSheet">
-        <View style={s.modal}>
+      <Modal visible={addFeedModal} animationType="slide" presentationStyle="pageSheet"
+          onRequestClose={() => { setAddFeedModal(false); setFeedErrors({}); }}>
+        <SafeAreaView style={s.modal}>
           <View style={s.modalHeader}>
             <Text style={s.modalTitle}>Add / Update Feed</Text>
             <TouchableOpacity onPress={() => { setAddFeedModal(false); setFeedErrors({}); }}>
@@ -279,12 +281,13 @@ export default function InventoryScreen() {
               <Text style={s.saveBtnText}>{addingSaving ? "Saving..." : "Save Feed"}</Text>
             </TouchableOpacity>
           </ScrollView>
-        </View>
+        </SafeAreaView>
       </Modal>
 
       {/* Add Medicine Modal */}
-      <Modal visible={addMedModal} animationType="slide" presentationStyle="pageSheet">
-        <View style={s.modal}>
+      <Modal visible={addMedModal} animationType="slide" presentationStyle="pageSheet"
+          onRequestClose={() => { setAddMedModal(false); setMedErrors({}); }}>
+        <SafeAreaView style={s.modal}>
           <View style={s.modalHeader}>
             <Text style={s.modalTitle}>Add / Update Medicine</Text>
             <TouchableOpacity onPress={() => { setAddMedModal(false); setMedErrors({}); }}>
@@ -333,7 +336,7 @@ export default function InventoryScreen() {
               <Text style={s.saveBtnText}>{addingSaving ? "Saving..." : "Save Medicine"}</Text>
             </TouchableOpacity>
           </ScrollView>
-        </View>
+        </SafeAreaView>
       </Modal>
     </View>
   );

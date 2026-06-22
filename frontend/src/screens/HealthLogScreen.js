@@ -1,3 +1,13 @@
+/**
+ * frontend/src/screens/HealthLogScreen.js
+ *
+ * Redesigned with:
+ *  - Structured disease category + disease name picker (no free-text guessing)
+ *  - Full catalogue of common swine conditions from health_intelligence
+ *  - Vitals, physical signs, treatment, outcome, recovery date
+ *  - All emojis replaced with PNG icons
+ *  - No tintColor on icons
+ */
 import React, { useState, useCallback } from "react";
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
@@ -6,11 +16,12 @@ import {
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { Platform } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { api } from "../services/api";
 import { COLORS, RADIUS, SHADOW } from "../theme";
 
 const ICONS = {
-  health:    require("../assets/icons/stethoscope.png"),
+  health:    require("../assets/icons/pill.png"),
   analytics: require("../assets/icons/analytics.png"),
   audit:     require("../assets/icons/audit.png"),
   vaccine:   require("../assets/icons/vaccine.png"),
@@ -519,8 +530,9 @@ export default function HealthLogScreen({ route }) {
       </ScrollView>
 
       {/* Disease category picker modal */}
-      <Modal visible={showCatPicker} animationType="slide" presentationStyle="pageSheet">
-        <View style={s.modal}>
+      <Modal visible={showCatPicker} animationType="slide" presentationStyle="pageSheet"
+          onRequestClose={() => setShowCatPicker(false)}>
+        <SafeAreaView style={s.modal}>
           <View style={s.modalHeader}>
             <Text style={s.modalTitle}>Select Disease Category</Text>
             <TouchableOpacity onPress={() => setShowCatPicker(false)}>
@@ -541,12 +553,13 @@ export default function HealthLogScreen({ route }) {
               </TouchableOpacity>
             ))}
           </ScrollView>
-        </View>
+        </SafeAreaView>
       </Modal>
 
       {/* Disease name picker modal */}
-      <Modal visible={showNamePicker} animationType="slide" presentationStyle="pageSheet">
-        <View style={s.modal}>
+      <Modal visible={showNamePicker} animationType="slide" presentationStyle="pageSheet"
+          onRequestClose={() => setShowNamePicker(false)}>
+        <SafeAreaView style={s.modal}>
           <View style={s.modalHeader}>
             <Text style={s.modalTitle}>{selectedCat?.label || "Select Disease"}</Text>
             <TouchableOpacity onPress={() => setShowNamePicker(false)}>
@@ -565,7 +578,7 @@ export default function HealthLogScreen({ route }) {
               </TouchableOpacity>
             ))}
           </ScrollView>
-        </View>
+        </SafeAreaView>
       </Modal>
     </View>
   );

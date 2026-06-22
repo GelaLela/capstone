@@ -6,7 +6,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 // const BASE_URL = "http://192.168.1.4:8000/api";
 
 // PRODUCTION (PythonAnywhere + APK build):
-const BASE_URL = "https://cultural-routine-nape.ngrok-free.dev/api";
+const BASE_URL = "https://newpiglytics.pythonanywhere.com/api";
 
 export function getBaseUrl() { return BASE_URL; }
 
